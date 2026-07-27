@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { CliError } from "../errors.js";
+import { compareSemver } from "../semver.js";
 import type { HttpClient } from "../rest/http-client.js";
 import {
   restUrlFromResource,
@@ -248,7 +249,16 @@ export function assertWordPressCompatible(value: ServerCompatibility): void {
 
 export function assertPluginCompatible(value: ServerCompatibility): void {
   const compatibility = compatibilityObject(value);
-  if (compareSemver(compatibility.plugin_version, MINIMUM_NOVAMIRA_VERSION) < 0)
+  let comparison: number;
+  try {
+    comparison = compareSemver(
+      compatibility.plugin_version,
+      MINIMUM_NOVAMIRA_VERSION,
+    );
+  } catch (error) {
+    throw unsupported("Novamira version metadata is invalid.", error);
+  }
+  if (comparison < 0)
     throw unsupported(
       `Novamira ${MINIMUM_NOVAMIRA_VERSION} or newer is required.`,
     );
@@ -356,49 +366,6 @@ function compareDotted(left: string, right: string): number {
   ) {
     const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
     if (difference !== 0) return Math.sign(difference);
-  }
-  return 0;
-}
-
-function compareSemver(left: string, right: string): number {
-  const expression =
-    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
-  const leftMatch = expression.exec(left);
-  const rightMatch = expression.exec(right);
-  if (leftMatch === null || rightMatch === null)
-    throw unsupported("Novamira version metadata is invalid.");
-  for (let index = 1; index <= 3; index += 1) {
-    const difference = Number(leftMatch[index]) - Number(rightMatch[index]);
-    if (difference !== 0) return Math.sign(difference);
-  }
-  if (leftMatch[4] === undefined && rightMatch[4] !== undefined) return 1;
-  if (leftMatch[4] !== undefined && rightMatch[4] === undefined) return -1;
-  return comparePrerelease(leftMatch[4], rightMatch[4]);
-}
-
-function comparePrerelease(
-  left: string | undefined,
-  right: string | undefined,
-): number {
-  if (left === right) return 0;
-  const leftParts = left?.split(".") ?? [];
-  const rightParts = right?.split(".") ?? [];
-  for (
-    let index = 0;
-    index < Math.max(leftParts.length, rightParts.length);
-    index += 1
-  ) {
-    const leftPart = leftParts[index];
-    const rightPart = rightParts[index];
-    if (leftPart === undefined) return -1;
-    if (rightPart === undefined) return 1;
-    if (leftPart === rightPart) continue;
-    const leftNumeric = /^\d+$/.test(leftPart);
-    const rightNumeric = /^\d+$/.test(rightPart);
-    if (leftNumeric && rightNumeric)
-      return Math.sign(Number(leftPart) - Number(rightPart));
-    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
-    return leftPart.localeCompare(rightPart);
   }
   return 0;
 }

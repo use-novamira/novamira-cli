@@ -39,6 +39,21 @@ novamira --version
 novamira doctor --offline
 ```
 
+After a successful command, the CLI checks the npm registry at most once every
+24 hours and prints a stderr warning when a newer release is published. Install
+it with:
+
+```sh
+novamira update           # install the latest published release
+novamira update --check   # report the published version without installing
+```
+
+The check is anonymous, sends no profile, site, or credential data, and never
+changes a command's exit code; `NOVAMIRA_UPDATE_CHECK=0` disables it. See
+[`docs/v1-contract.md`](docs/v1-contract.md) for the full update contract.
+Reinstall the agent skill separately after a major upgrade if bundled guidance
+changed.
+
 Before upgrading, update the site to WordPress 6.9+ and Novamira 1.11.0+, then
 run `novamira --site <profile> doctor --json`. Re-run doctor after upgrading the
 CLI. Profiles, grants, and caches are versioned independently; do not copy token

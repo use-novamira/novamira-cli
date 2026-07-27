@@ -20,6 +20,7 @@ const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const cleanEnvironment = {
   ...process.env,
   NOVAMIRA_CREDENTIAL_BACKEND: "file",
+  NOVAMIRA_UPDATE_CHECK: "0",
   npm_config_audit: "false",
   npm_config_fund: "false",
   npm_config_ignore_scripts: "true",

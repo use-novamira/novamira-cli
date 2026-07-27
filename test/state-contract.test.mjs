@@ -117,7 +117,7 @@ test("profiles update atomically, select deterministically, and invoke cleanup b
           stdout: { write: (value) => (listed += value) },
           stderr: { write: () => undefined },
         },
-        { NOVAMIRA_HOME: state.root },
+        { NOVAMIRA_HOME: state.root, NOVAMIRA_UPDATE_CHECK: "0" },
       ),
       0,
     );
@@ -147,7 +147,7 @@ test("profiles update atomically, select deterministically, and invoke cleanup b
           stdout: { write: (value) => (removed += value) },
           stderr: { write: () => undefined },
         },
-        { NOVAMIRA_HOME: state.root },
+        { NOVAMIRA_HOME: state.root, NOVAMIRA_UPDATE_CHECK: "0" },
       ),
       0,
     );

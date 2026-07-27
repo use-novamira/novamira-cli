@@ -45,11 +45,19 @@ import { CompositeUploader } from "./upload/client.js";
 import { runOfflineDoctor } from "./doctor/engine.js";
 import { runOnlineDoctor } from "./doctor/online.js";
 import { GuideStore } from "./guides/store.js";
+import {
+  UpdateChecker,
+  updateCheckEnabled,
+  updateNotice,
+  type UpdateCheckEnvironment,
+} from "./update/notifier.js";
+import { installVersion, SpawnInstallRunner } from "./update/install.js";
+import { DEFAULT_REGISTRY } from "./update/registry.js";
 
 export const VERSION = "1.0.0-rc.2";
 
 export interface RuntimeEnvironment
-  extends PathEnvironment, SelectionEnvironment {
+  extends PathEnvironment, SelectionEnvironment, UpdateCheckEnvironment {
   readonly NO_COLOR?: string;
   readonly NOVAMIRA_CREDENTIAL_BACKEND?: string;
 }
@@ -61,6 +69,7 @@ export async function main(
 ): Promise<number> {
   const requestId = randomUUID();
   let options: GlobalOptions | undefined;
+  let executedCommand: string | undefined;
 
   const paths = platformPaths(environment);
   const security = defaultFileSecurity();
@@ -88,6 +97,15 @@ export async function main(
     security,
   );
   const artifacts = new ArtifactStore(paths.cacheDir, locks, security);
+  const createUpdateChecker = (timeoutMs?: number) =>
+    new UpdateChecker(paths.stateDir, locks, security, {
+      currentVersion: VERSION,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...(environment.NOVAMIRA_REGISTRY === undefined
+        ? {}
+        : { registry: environment.NOVAMIRA_REGISTRY }),
+      allowInsecureHttp: environment.NOVAMIRA_ALLOW_INSECURE_HTTP === "1",
+    });
   const http = new HttpClient({
     onDiagnostic: (diagnostic) => {
       if (options?.verbose === true && !options.quiet)
@@ -113,6 +131,7 @@ export async function main(
     VERSION,
     async (command, parsedOptions, args) => {
       options = parsedOptions;
+      executedCommand = command;
       if (command.startsWith("version:")) {
         const version = command.slice("version:".length);
         if (parsedOptions.json)
@@ -397,6 +416,48 @@ export async function main(
         else writeHumanSuccess(streams, guide.content);
         return;
       }
+      if (command === "update") {
+        const status = await createUpdateChecker(parsedOptions.timeout).check();
+        if (parsedOptions.check === true || !status.updateAvailable) {
+          const data = {
+            current: status.current,
+            latest: status.latest,
+            updateAvailable: status.updateAvailable,
+            ...(parsedOptions.check === true ? {} : { updated: false }),
+          };
+          if (!parsedOptions.json && !parsedOptions.quiet)
+            streams.stderr.write(
+              status.updateAvailable
+                ? `${updateNotice(status)}\n`
+                : `novamira ${status.current} is the latest release.\n`,
+            );
+          if (parsedOptions.json)
+            writeJsonSuccess(streams, data, { requestId });
+          else writeHumanSuccess(streams, data);
+          return;
+        }
+        if (!parsedOptions.quiet)
+          streams.stderr.write(
+            `Updating novamira ${status.current} -> ${status.latest}...\n`,
+          );
+        const data = await installVersion(
+          status.current,
+          status.latest,
+          // An explicit --timeout bounds the installer too; otherwise the
+          // installer keeps its own longer default.
+          new SpawnInstallRunner(
+            parsedOptions.timeoutExplicit ? parsedOptions.timeout : undefined,
+          ),
+          (chunk) => {
+            if (!parsedOptions.quiet) streams.stderr.write(chunk);
+          },
+          undefined,
+          environment.NOVAMIRA_REGISTRY ?? DEFAULT_REGISTRY,
+        );
+        if (parsedOptions.json) writeJsonSuccess(streams, data, { requestId });
+        else writeHumanSuccess(streams, data);
+        return;
+      }
       if (command === "doctor") {
         const commonDoctor = {
           paths,
@@ -496,8 +557,22 @@ export async function main(
     writeErr: () => undefined,
   });
 
+  const emitUpdateNotice = async (): Promise<void> => {
+    if (
+      options?.quiet === true ||
+      options?.offline === true ||
+      executedCommand === undefined ||
+      executedCommand === "update" ||
+      !updateCheckEnabled(environment)
+    )
+      return;
+    const notice = await createUpdateChecker().notice();
+    if (notice !== undefined) streams.stderr.write(`Warning: ${notice}\n`);
+  };
+
   try {
     await program.parseAsync(argv, { from: "user" });
+    await emitUpdateNotice();
     return 0;
   } catch (error) {
     if (isHelpExit(error)) return 0;

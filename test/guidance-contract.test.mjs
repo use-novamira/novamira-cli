@@ -117,6 +117,7 @@ test("guide commands work from source and installed package layouts", async (con
       {
         cwd: temporary,
         encoding: "utf8",
+        env: { ...process.env, NOVAMIRA_UPDATE_CHECK: "0" },
       },
     );
     assert.equal(result.status, 0, result.stderr);
@@ -128,7 +129,10 @@ test("guide commands work from source and installed package layouts", async (con
   await mkdir(join(temporary, "global", "bin"), { recursive: true });
   await symlink(layouts[1] + "/dist/index.js", globalBin);
   assert.equal(
-    spawnSync(globalBin, ["guide", "list"], { encoding: "utf8" }).status,
+    spawnSync(globalBin, ["guide", "list"], {
+      encoding: "utf8",
+      env: { ...process.env, NOVAMIRA_UPDATE_CHECK: "0" },
+    }).status,
     0,
   );
 
@@ -143,6 +147,7 @@ test("guide commands work from source and installed package layouts", async (con
     {
       cwd: temporary,
       encoding: "utf8",
+      env: { ...process.env, NOVAMIRA_UPDATE_CHECK: "0" },
     },
   );
   assert.equal(local.status, 0, local.stderr);

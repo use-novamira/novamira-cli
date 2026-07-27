@@ -16,6 +16,8 @@ export interface GlobalOptions {
   readonly site?: string;
   readonly json: boolean;
   readonly timeout: number;
+  /** True when --timeout was given, so a command default must not override it. */
+  readonly timeoutExplicit: boolean;
   readonly yes: boolean;
   readonly maxOutput: number;
   readonly color: boolean;
@@ -30,6 +32,7 @@ export interface GlobalOptions {
   readonly offline?: boolean;
   readonly fix?: boolean;
   readonly full?: boolean;
+  readonly check?: boolean;
 }
 
 export type CommandHandler = (
@@ -86,10 +89,14 @@ export function createProgram(
       const args = values.filter(
         (value): value is string => typeof value === "string",
       );
-      const parsedOptions = active.optsWithGlobals<GlobalOptions>();
+      const explicitTimeout =
+        active.getOptionValueSourceWithGlobals("timeout") !== "default";
+      const parsedOptions = {
+        ...active.optsWithGlobals<GlobalOptions>(),
+        timeoutExplicit: explicitTimeout,
+      };
       const options =
-        label === "auth login" &&
-        active.getOptionValueSourceWithGlobals("timeout") === "default"
+        label === "auth login" && !explicitTimeout
           ? {
               ...parsedOptions,
               timeout: DEFAULT_AUTHORIZATION_TIMEOUT_MS,
@@ -137,6 +144,12 @@ export function createProgram(
     .command("get <name>")
     .option("--full", "include full references", false)
     .action(invoke("guide get"));
+
+  program
+    .command("update")
+    .description("install the latest published CLI release")
+    .option("--check", "report the published version without installing", false)
+    .action(invoke("update"));
 
   program
     .command("doctor")

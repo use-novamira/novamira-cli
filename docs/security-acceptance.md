@@ -20,6 +20,7 @@ release gate.
 | Redirect/origin boundaries and bounded HTTP responses | `test/http-compatibility-contract.test.mjs`; `test/site-skill-upload-contract.test.mjs` |
 | Bounded caches/output and owner-only credential/artifact storage | `test/cache-artifacts-contract.test.mjs`; `test/credentials-contract.test.mjs`; `test/state-contract.test.mjs` |
 | Parseable JSON/exit agreement and complete doctor diagnostics | `test/process-contract.test.mjs`; `test/doctor-offline-contract.test.mjs`; `test/doctor-online-contract.test.mjs` |
+| Anonymous HTTPS-only update check (plain HTTP only for a loopback registry with `NOVAMIRA_ALLOW_INSECURE_HTTP=1`) that sends no site, profile, or credential data, bounds the response, never changes a command outcome, and installs on request from the registry it queried | `test/update-contract.test.mjs` |
 | Agent guidance teaches only the direct REST workflow | `test/guidance-contract.test.mjs` |
 | Node 22/24 and Linux/macOS/Windows package installation | `.github/workflows/package.yml`; `scripts/package-acceptance.mjs` |
 | Local, global, and npx installation with scripts disabled; help, version, offline doctor, and installed guides | `scripts/package-acceptance.mjs` |

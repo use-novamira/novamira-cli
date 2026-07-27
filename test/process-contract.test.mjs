@@ -10,7 +10,7 @@ import { main, VERSION } from "../dist/main.js";
 import { redact } from "../dist/output/redact.js";
 
 const home = await mkdtemp(join(tmpdir(), "novamira-process-"));
-const environment = { NOVAMIRA_HOME: home };
+const environment = { NOVAMIRA_HOME: home, NOVAMIRA_UPDATE_CHECK: "0" };
 
 after(async () => rm(home, { recursive: true, force: true }));
 

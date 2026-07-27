@@ -31,4 +31,10 @@ novamira --site example-site doctor --json
 novamira --site example-site auth logout --json
 ```
 
+A newer published release is reported once a day as a stderr warning. Ask before
+installing it; `novamira update --check --json` reports the published version
+without changing anything, and `novamira update` installs it with the package
+manager that owns the installation. Set `NOVAMIRA_UPDATE_CHECK=0` to silence the
+automatic notice.
+
 Use `skill get` only for slugs advertised by discovery. Use `upload` only with an explicitly approved full grant; it performs a one-shot transfer and must not be retried after an ambiguous failure.
