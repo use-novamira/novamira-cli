@@ -24,8 +24,8 @@ release gate.
 | Agent guidance teaches only the direct REST workflow | `test/guidance-contract.test.mjs` |
 | Node 22/24 and Linux/macOS/Windows package installation | `.github/workflows/package.yml`; `scripts/package-acceptance.mjs` |
 | Local, global, and npx installation with scripts disabled; help, version, offline doctor, and installed guides | `scripts/package-acceptance.mjs` |
-| Restricted prerelease, exact registry integrity, provenance, ownership, and review controls | `.github/workflows/prerelease.yml` |
-| Online doctor and representative REST workflow from release-equivalent compiled code | `test/doctor-online-contract.test.mjs`; `test/security-acceptance.test.mjs`; `.github/workflows/prerelease.yml` |
+| Restricted release, exact registry integrity, provenance, ownership, and review controls | `.github/workflows/release.yml` |
+| Online doctor and representative REST workflow from release-equivalent compiled code | `test/doctor-online-contract.test.mjs`; `test/security-acceptance.test.mjs`; `.github/workflows/release.yml` |
 
 The plugin acceptance client and CLI acceptance edge intentionally expose no
 protocol-session or JSON-RPC API. Production handler tests beneath the plugin
