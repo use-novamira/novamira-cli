@@ -1,0 +1,7 @@
+{
+  "code": "novamira_ability_not_found",
+  "message": "Ability not found: extension/example/nested",
+  "data": {
+    "status": 404
+  }
+}

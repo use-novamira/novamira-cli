@@ -1,0 +1,55 @@
+{
+  "name": "@novamira/cli",
+  "version": "1.0.0-rc.2",
+  "description": "REST-first command-line client for Novamira WordPress Abilities",
+  "license": "AGPL-3.0-or-later",
+  "author": "Ovation S.r.l.",
+  "homepage": "https://github.com/use-novamira/novamira-cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/use-novamira/novamira-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/use-novamira/novamira-cli/issues"
+  },
+  "type": "module",
+  "bin": {
+    "novamira": "dist/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist",
+    "guide-data",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/set-bin-mode.mjs",
+    "test": "bun run build && node --test test/*.test.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "headers": "node scripts/add-spdx-headers.mjs",
+    "check": "bun run lint && bun run format:check && bun run test",
+    "pack:inspect": "bun run build && bun pm pack --dry-run --ignore-scripts",
+    "package:acceptance": "bun run build && node scripts/package-acceptance.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "dependencies": {
+    "commander": "^14.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

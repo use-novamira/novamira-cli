@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Publish public prerelease
+
+on:
+  push:
+    tags:
+      - "v*-*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-prerelease
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.19
+      - run: npm config set ignore-scripts true
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run check
+      - name: Verify tag and package
+        run: |
+          node -e 'const p=require("./package.json"); if (`v${p.version}` !== process.env.GITHUB_REF_NAME || !p.version.includes("-")) process.exit(1)'
+          bun run package:acceptance
+      - name: Capture local package integrity
+        run: echo "NOVAMIRA_EXPECTED_INTEGRITY=$(npm pack --json --ignore-scripts | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s)[0].integrity))')" >> "$GITHUB_ENV"
+      - name: Publish with trusted provenance
+        run: npm publish --access public --tag latest --provenance
+      - name: Verify exact public publication
+        run: |
+          node scripts/package-acceptance.mjs --package=@novamira/cli@${GITHUB_REF_NAME#v}
+          npm view @novamira/cli@${GITHUB_REF_NAME#v} dist.attestations --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{if(!JSON.parse(s).provenance)process.exit(1)})'
