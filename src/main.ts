@@ -54,7 +54,7 @@ import {
 import { installVersion, SpawnInstallRunner } from "./update/install.js";
 import { DEFAULT_REGISTRY } from "./update/registry.js";
 
-export const VERSION = "1.0.0-rc.4";
+export const VERSION = "1.0.0-rc.5";
 
 export interface RuntimeEnvironment
   extends PathEnvironment, SelectionEnvironment, UpdateCheckEnvironment {

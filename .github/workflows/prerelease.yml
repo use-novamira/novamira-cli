@@ -26,8 +26,6 @@ jobs:
         with:
           bun-version: 1.2.19
       - run: npm config set ignore-scripts true
-      - name: Install trusted-publishing npm client
-        run: npm install --global npm@12.0.1 --ignore-scripts
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run check
       - name: Verify tag and package
@@ -36,6 +34,8 @@ jobs:
           bun run package:acceptance
       - name: Capture local package integrity
         run: echo "NOVAMIRA_EXPECTED_INTEGRITY=$(npm pack --json --ignore-scripts | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s)[0].integrity))')" >> "$GITHUB_ENV"
+      - name: Install trusted-publishing npm client
+        run: npm install --global npm@12.0.1 --ignore-scripts
       - name: Publish with trusted provenance
         run: npm publish --access public --tag latest --provenance --loglevel verbose
       - name: Verify exact public publication
