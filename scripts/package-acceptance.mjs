@@ -39,7 +39,7 @@ try {
   const packed = run(npm, packArguments, root);
   const [manifest] = JSON.parse(packed.stdout);
   assert.equal(manifest.name, "@novamira/cli");
-  assert.equal(manifest.version, "1.0.0-rc.5");
+  assert.equal(manifest.version, "1.0.0");
   assert.equal(
     manifest.integrity,
     process.env.NOVAMIRA_EXPECTED_INTEGRITY ?? manifest.integrity,
@@ -170,10 +170,7 @@ try {
 
 function verifyInstalledCommands(command, home) {
   assert.match(run(command, ["--help"], temporary).stdout, /Usage: novamira/);
-  assert.equal(
-    run(command, ["--version"], temporary).stdout.trim(),
-    "1.0.0-rc.5",
-  );
+  assert.equal(run(command, ["--version"], temporary).stdout.trim(), "1.0.0");
   const guide = JSON.parse(
     run(command, ["--json", "guide", "get", "core", "--full"], temporary)
       .stdout,
