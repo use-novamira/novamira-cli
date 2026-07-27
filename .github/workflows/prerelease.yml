@@ -40,5 +40,16 @@ jobs:
         run: npm publish --access public --tag latest --provenance --loglevel verbose
       - name: Verify exact public publication
         run: |
-          node scripts/package-acceptance.mjs --package=@novamira/cli@${GITHUB_REF_NAME#v}
-          npm view @novamira/cli@${GITHUB_REF_NAME#v} dist.attestations --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{if(!JSON.parse(s).provenance)process.exit(1)})'
+          version=${GITHUB_REF_NAME#v}
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if npm view @novamira/cli@$version version --json >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" = 12 ]; then
+              echo "npm did not expose @novamira/cli@$version within 60 seconds" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          node scripts/package-acceptance.mjs --package=@novamira/cli@$version
+          npm view @novamira/cli@$version dist.attestations --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{if(!JSON.parse(s).provenance)process.exit(1)})'
