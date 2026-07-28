@@ -105,6 +105,13 @@ test("profiles update atomically, select deterministically, and invoke cleanup b
         .name,
       "production",
     );
+    assert.equal(
+      await state.store.trySelect("missing", {
+        NOVAMIRA_SITE: "production",
+      }),
+      undefined,
+    );
+    assert.equal(await state.store.trySelect(undefined, {}), undefined);
     await assert.rejects(state.store.select(undefined, {}), {
       code: "site_required",
     });
@@ -128,6 +135,10 @@ test("profiles update atomically, select deterministically, and invoke cleanup b
 
     await state.store.remove("staging");
     assert.deepEqual(cleaned, ["staging"]);
+    assert.equal(
+      (await state.store.trySelect(undefined, {})).name,
+      "production",
+    );
     assert.equal((await state.store.select(undefined, {})).name, "production");
 
     const config = JSON.parse(await readFile(state.paths.configFile, "utf8"));

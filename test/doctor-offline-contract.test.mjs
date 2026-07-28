@@ -45,7 +45,7 @@ function fakeDependencies(root, overrides = {}) {
   return {
     paths,
     security,
-    profiles: { list: async () => [] },
+    profiles: { list: async () => [], trySelect: async () => undefined },
     credentials: {
       diagnostic: () => ({ backend: "file", osBackedEncryption: false }),
       read: async () => undefined,
@@ -172,7 +172,10 @@ test("offline check IDs are stable and local pass, warn, and fail states remain 
       clientId: "public-client",
     };
     const profileDependencies = fakeDependencies(missingRoot, {
-      profiles: { list: async () => [profile] },
+      profiles: {
+        list: async () => [profile],
+        trySelect: async (site) => (site === "missing" ? undefined : profile),
+      },
     });
     assert.equal(await statusOf(dependencies, "profile.valid"), "warn");
     assert.equal(await statusOf(profileDependencies, "profile.valid"), "pass");
@@ -184,7 +187,10 @@ test("offline check IDs are stable and local pass, warn, and fail states remain 
     assert.equal(
       await statusOf(
         fakeDependencies(missingRoot, {
-          profiles: { list: async () => [profile] },
+          profiles: {
+            list: async () => [profile],
+            trySelect: async () => profile,
+          },
           credentials: {
             diagnostic: () => ({ backend: "file", osBackedEncryption: false }),
             read: async () => ({
@@ -203,7 +209,10 @@ test("offline check IDs are stable and local pass, warn, and fail states remain 
     assert.equal(
       await statusOf(
         fakeDependencies(missingRoot, {
-          profiles: { list: async () => [profile] },
+          profiles: {
+            list: async () => [profile],
+            trySelect: async () => profile,
+          },
           credentials: {
             diagnostic: () => ({ backend: "file", osBackedEncryption: false }),
             read: async () => ({

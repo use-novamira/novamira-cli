@@ -92,11 +92,7 @@ export function offlineDoctorDefinitions(
   options: { readonly fix: boolean; readonly site?: string },
 ): readonly DoctorCheckDefinition[] {
   const selectedProfile = () =>
-    selectProfile(
-      dependencies.profiles,
-      options.site,
-      dependencies.environment,
-    );
+    dependencies.profiles.trySelect(options.site, dependencies.environment);
   return [
     {
       id: "runtime.node",
@@ -399,18 +395,6 @@ async function tokenCheck(
     summary: "The local OAuth token state is coherent.",
     evidence,
   };
-}
-
-async function selectProfile(
-  profiles: ProfileStore,
-  explicitSite: string | undefined,
-  environment: SelectionEnvironment,
-): Promise<SiteProfile | undefined> {
-  const all = await profiles.list();
-  const requested = explicitSite ?? environment.NOVAMIRA_SITE;
-  if (requested !== undefined && requested !== "")
-    return all.find((profile) => profile.name === requested);
-  return all.length === 1 ? all[0] : undefined;
 }
 
 async function permissionTargets(

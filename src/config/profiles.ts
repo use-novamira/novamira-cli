@@ -52,6 +52,14 @@ function emptyDocument(): ProfileDocument {
   return { version: PROFILE_FORMAT_VERSION, profiles: {} };
 }
 
+function requestedProfileName(
+  explicitSite: string | undefined,
+  environment: SelectionEnvironment,
+): string | undefined {
+  const requested = explicitSite ?? environment.NOVAMIRA_SITE;
+  return requested === "" ? undefined : requested;
+}
+
 function isProfile(value: unknown): value is SiteProfile {
   if (value === null || typeof value !== "object") return false;
   const profile = value as Partial<SiteProfile>;
@@ -196,25 +204,20 @@ export class ProfileStore {
     explicitSite: string | undefined,
     environment: SelectionEnvironment,
   ): Promise<SiteProfile> {
+    const profile = await this.trySelect(explicitSite, environment);
+    if (profile !== undefined) return profile;
+
     const profiles = await this.list();
-    const requested = explicitSite ?? environment.NOVAMIRA_SITE;
-    if (requested !== undefined && requested !== "") {
-      const profile = profiles.find(
-        (candidate) => candidate.name === requested,
+    const requested = requestedProfileName(explicitSite, environment);
+    if (requested !== undefined) {
+      throw new CliError(
+        "site_not_found",
+        `Site profile ${requested} was not found.`,
+        {
+          details: { profiles: profiles.map(({ name }) => name) },
+        },
       );
-      if (profile === undefined) {
-        throw new CliError(
-          "site_not_found",
-          `Site profile ${requested} was not found.`,
-          {
-            details: { profiles: profiles.map(({ name }) => name) },
-          },
-        );
-      }
-      return profile;
     }
-    const soleProfile = profiles[0];
-    if (profiles.length === 1 && soleProfile !== undefined) return soleProfile;
     throw new CliError(
       "site_required",
       "Select a site profile with --site or NOVAMIRA_SITE.",
@@ -222,6 +225,17 @@ export class ProfileStore {
         details: { profiles: profiles.map(({ name }) => name) },
       },
     );
+  }
+
+  async trySelect(
+    explicitSite: string | undefined,
+    environment: SelectionEnvironment,
+  ): Promise<SiteProfile | undefined> {
+    const profiles = await this.list();
+    const requested = requestedProfileName(explicitSite, environment);
+    if (requested !== undefined)
+      return profiles.find((candidate) => candidate.name === requested);
+    return profiles.length === 1 ? profiles[0] : undefined;
   }
 
   private async readDocument(): Promise<ProfileDocument> {

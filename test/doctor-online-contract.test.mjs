@@ -97,6 +97,7 @@ function dependencies(overrides = {}) {
     security: {},
     profiles: {
       list: async () => [profile],
+      trySelect: async () => profile,
       select: async () => profile,
     },
     credentials: {
