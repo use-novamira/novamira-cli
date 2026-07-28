@@ -307,7 +307,7 @@ export class LoginService {
       try {
         if (previousTarget !== undefined && previousTarget.origin !== origin)
           await this.credentials.deleteUnderLock(previousTarget);
-        return await this.profiles.upsertUnderLock({
+        return await this.profiles.upsertWithProfileLockHeld({
           name: profileName,
           siteUrl: site,
           clientId,

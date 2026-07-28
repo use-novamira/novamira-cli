@@ -16,6 +16,8 @@ export interface LockOptions {
 }
 
 export class ProfileLockManager {
+  private readonly heldKeys = new Set<string>();
+
   constructor(
     private readonly stateDir: string,
     private readonly security: FileSecurity,
@@ -38,6 +40,12 @@ export class ProfileLockManager {
     profileName: string,
     options: LockOptions = {},
   ): Promise<() => Promise<void>> {
+    if (this.heldKeys.has(profileName)) {
+      throw new CliError(
+        "internal_error",
+        `Profile lock ${profileName} is already held by this lock manager.`,
+      );
+    }
     const timeoutMs = options.timeoutMs ?? 10_000;
     const staleMs = options.staleMs ?? 60_000;
     const pollMs = options.pollMs ?? 25;
@@ -74,13 +82,19 @@ export class ProfileLockManager {
           await unlink(lockPath).catch(() => undefined);
           throw error;
         }
+        this.heldKeys.add(profileName);
         let released = false;
         return async () => {
           if (released) return;
           released = true;
-          await unlink(lockPath).catch((error: unknown) => {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-          });
+          try {
+            await unlink(lockPath).catch((error: unknown) => {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+                throw error;
+            });
+          } finally {
+            this.heldKeys.delete(profileName);
+          }
         };
       }
 

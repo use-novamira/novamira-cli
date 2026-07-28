@@ -184,6 +184,16 @@ test("locks coordinate independent managers, stale owners recover, and failed at
     );
     await release();
 
+    const nestedRelease = await state.locks.acquire("nested");
+    await assert.rejects(state.locks.acquire("nested"), {
+      code: "internal_error",
+      message: "Profile lock nested is already held by this lock manager.",
+    });
+    await nestedRelease();
+    await (
+      await state.locks.acquire("nested")
+    )();
+
     const lockDir = join(state.paths.stateDir, "locks");
     await mkdir(lockDir, { recursive: true });
     const { createHash } = await import("node:crypto");

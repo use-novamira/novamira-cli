@@ -141,10 +141,12 @@ export class ProfileStore {
     compatibility?: ProfileCompatibility;
   }): Promise<SiteProfile> {
     const name = validateProfileName(input.name);
-    return this.locks.withLock(name, async () => this.upsertUnderLock(input));
+    return this.locks.withLock(name, async () =>
+      this.upsertWithProfileLockHeld(input),
+    );
   }
 
-  async upsertUnderLock(input: {
+  async upsertWithProfileLockHeld(input: {
     name: string;
     siteUrl: string;
     clientId?: string;
