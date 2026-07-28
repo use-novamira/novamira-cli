@@ -20,6 +20,8 @@ import {
   HTTP_RESPONSE_CEILING_BYTES,
   assertHttpResponseSize,
 } from "../dist/output/artifacts.js";
+import { redact } from "../dist/output/redact.js";
+import { isCredentialClassifiedResult } from "../dist/security/classify.js";
 
 async function state() {
   const root = await mkdtemp(join(tmpdir(), "novamira-cache-"));
@@ -34,6 +36,29 @@ const key = {
   profileName: "production",
   abilityName: "novamira/read-file",
 };
+
+test("credential classification is shared while redaction remains conservative", () => {
+  for (const name of [
+    "authorization",
+    "access_token",
+    "clientSecret",
+    "password",
+    "codeVerifier",
+    "credential",
+  ]) {
+    assert.equal(
+      isCredentialClassifiedResult({ nested: [{ [name]: "value" }] }),
+      true,
+    );
+  }
+  assert.equal(
+    isCredentialClassifiedResult({ code: "ordinary-result-code" }),
+    false,
+  );
+  assert.deepEqual(redact({ code: "oauth-callback-code" }), {
+    code: "[REDACTED]",
+  });
+});
 
 test("Ability metadata cache crosses processes and enforces freshness, separation, invalidation, corruption, and deterministic budget", async () => {
   const current = await state();

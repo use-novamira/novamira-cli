@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-const SECRET_KEY =
-  /(authorization|token|secret|password|code|verifier|credential)/i;
+import { REDACTION_KEY_PATTERN } from "../security/classify.js";
+
 const REDACTED = "[REDACTED]";
 
 export function redact(
@@ -23,7 +23,7 @@ export function redact(
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [
         key,
-        SECRET_KEY.test(key) ? REDACTED : redact(item, knownSecrets),
+        REDACTION_KEY_PATTERN.test(key) ? REDACTED : redact(item, knownSecrets),
       ]),
     );
   }

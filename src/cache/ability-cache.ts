@@ -8,6 +8,7 @@ import { atomicWriteFile } from "../config/atomic-write.js";
 import type { VerifiedFileSecurity } from "../config/file-security.js";
 import type { ProfileLockManager } from "../config/lock.js";
 import type { ProfileCleanupHook, SiteProfile } from "../config/profiles.js";
+import { isCredentialClassifiedResult } from "../security/classify.js";
 
 export const ABILITY_CACHE_TTL_MS = 5 * 60 * 1000;
 export const ABILITY_CACHE_BUDGET_BYTES = 10 * 1024 * 1024;
@@ -101,25 +102,6 @@ function parseDocument(raw: string): CacheDocument {
   return candidate as CacheDocument;
 }
 
-function containsCredentialValue(
-  value: unknown,
-  seen: Set<object> = new Set<object>(),
-): boolean {
-  if (value === null || typeof value !== "object") return false;
-  if (seen.has(value)) return false;
-  seen.add(value);
-  if (Array.isArray(value))
-    return value.some((item) => containsCredentialValue(item, seen));
-  return Object.entries(value).some(
-    ([name, item]) =>
-      (/(authorization|token|secret|password|verifier|credential)/i.test(
-        name,
-      ) &&
-        (item === null || typeof item !== "object")) ||
-      containsCredentialValue(item, seen),
-  );
-}
-
 function sameKey(left: AbilityCacheKey, right: AbilityCacheKey): boolean {
   return (
     left.origin === right.origin &&
@@ -185,7 +167,7 @@ export class AbilityMetadataCache implements ProfileCleanupHook {
     metadata: unknown,
   ): Promise<void> {
     const key = canonicalKey(input);
-    if (containsCredentialValue(metadata))
+    if (isCredentialClassifiedResult(metadata))
       throw new Error(
         "Credential-classified data cannot enter the Ability cache.",
       );

@@ -28,25 +28,6 @@ export interface OutputBudgetOptions {
   readonly credentialClassified?: boolean;
 }
 
-export function isCredentialClassifiedResult(
-  value: unknown,
-  seen: Set<object> = new Set<object>(),
-): boolean {
-  if (value === null || typeof value !== "object") return false;
-  if (seen.has(value)) return false;
-  seen.add(value);
-  if (Array.isArray(value))
-    return value.some((item) => isCredentialClassifiedResult(item, seen));
-  return Object.entries(value).some(
-    ([name, item]) =>
-      (/(authorization|token|secret|password|verifier|credential)/i.test(
-        name,
-      ) &&
-        (item === null || typeof item !== "object")) ||
-      isCredentialClassifiedResult(item, seen),
-  );
-}
-
 interface ArtifactFile {
   readonly path: string;
   readonly bytes: number;

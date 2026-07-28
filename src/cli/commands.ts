@@ -26,10 +26,8 @@ import type { SiteUrlEnvironment } from "../config/site-url.js";
 import { runOfflineDoctor } from "../doctor/engine.js";
 import { runOnlineDoctor } from "../doctor/online.js";
 import { GuideStore } from "../guides/store.js";
-import {
-  ArtifactStore,
-  isCredentialClassifiedResult,
-} from "../output/artifacts.js";
+import { ArtifactStore } from "../output/artifacts.js";
+import { isCredentialClassifiedResult } from "../security/classify.js";
 import {
   writeHumanAbilityDescription,
   writeHumanSuccess,
