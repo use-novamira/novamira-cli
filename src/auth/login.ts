@@ -12,7 +12,10 @@ import {
   type ProfileStore,
   type SiteProfile,
 } from "../config/profiles.js";
-import { normalizeSiteUrl } from "../config/site-url.js";
+import {
+  normalizeSiteUrl,
+  type SiteUrlEnvironment,
+} from "../config/site-url.js";
 import type { CredentialRecord, CredentialStore } from "./credentials.js";
 import type {
   AuthorizationServerMetadata,
@@ -74,6 +77,7 @@ export class LoginService {
     private readonly browser: BrowserLauncher = new SystemBrowserLauncher(),
     private readonly interaction: LoginInteraction = new TerminalLoginInteraction(),
     private readonly now: () => number = Date.now,
+    private readonly environment: SiteUrlEnvironment = process.env,
   ) {}
 
   async login(options: LoginOptions): Promise<LoginResult> {
@@ -81,6 +85,7 @@ export class LoginService {
       throw new CliError("usage_error", "Login timeout must be positive.");
     const { siteUrl: normalizedSite, origin } = normalizeSiteUrl(
       options.siteUrl,
+      this.environment,
     );
     const profileName = validateProfileName(
       options.name ?? defaultProfileName(normalizedSite),
@@ -180,6 +185,7 @@ export class LoginService {
           token.access_token,
           protectedMetadata.novamira,
           protectedMetadata.resource,
+          this.environment,
         );
         const credential: CredentialRecord = {
           version: 1,

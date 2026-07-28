@@ -21,7 +21,6 @@ const RECORD_VERSION = 1;
 export interface UpdateCheckEnvironment {
   readonly NOVAMIRA_UPDATE_CHECK?: string;
   readonly NOVAMIRA_REGISTRY?: string;
-  readonly NOVAMIRA_ALLOW_INSECURE_HTTP?: string;
 }
 
 export interface UpdateStatus {

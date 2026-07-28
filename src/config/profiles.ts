@@ -6,7 +6,7 @@ import { CliError } from "../errors.js";
 import { atomicWriteFile } from "./atomic-write.js";
 import type { FileSecurity } from "./file-security.js";
 import type { ProfileLockManager } from "./lock.js";
-import { normalizeSiteUrl } from "./site-url.js";
+import { normalizeSiteUrl, type SiteUrlEnvironment } from "./site-url.js";
 
 export const PROFILE_FORMAT_VERSION = 1;
 
@@ -121,6 +121,7 @@ export class ProfileStore {
     private readonly locks: ProfileLockManager,
     private readonly security: FileSecurity,
     private readonly cleanupHooks: readonly ProfileCleanupHook[] = [],
+    private readonly environment: SiteUrlEnvironment = process.env,
   ) {}
 
   async list(): Promise<SiteProfile[]> {
@@ -153,7 +154,7 @@ export class ProfileStore {
     compatibility?: ProfileCompatibility;
   }): Promise<SiteProfile> {
     const name = validateProfileName(input.name);
-    const normalized = normalizeSiteUrl(input.siteUrl);
+    const normalized = normalizeSiteUrl(input.siteUrl, this.environment);
     const profile: SiteProfile = {
       name,
       ...normalized,

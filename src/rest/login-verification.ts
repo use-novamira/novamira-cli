@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { CliError } from "../errors.js";
+import type { SiteUrlEnvironment } from "../config/site-url.js";
 import {
   assertMatchingCompatibility,
   type ServerCompatibility,
@@ -21,10 +22,16 @@ export async function verifyLoginSurface(
   accessToken: string,
   expected: ServerCompatibility,
   resource: string,
+  environment?: SiteUrlEnvironment,
 ): Promise<LoginSurface> {
   const tokens = { getAccessToken: () => Promise.resolve(accessToken) };
   const listUrl = new URL(
-    restUrlFromResource(siteUrl, resource, ["wp-abilities", "v1", "abilities"]),
+    restUrlFromResource(
+      siteUrl,
+      resource,
+      ["wp-abilities", "v1", "abilities"],
+      environment,
+    ),
   );
   listUrl.searchParams.set("per_page", "1");
   listUrl.searchParams.set("page", "1");
@@ -37,14 +44,12 @@ export async function verifyLoginSurface(
 
   const context = await http.authenticatedJson(
     {
-      url: restUrlFromResource(siteUrl, resource, [
-        "novamira",
-        "v1",
-        "abilities",
-        "novamira",
-        "agent-context",
-        "run",
-      ]),
+      url: restUrlFromResource(
+        siteUrl,
+        resource,
+        ["novamira", "v1", "abilities", "novamira", "agent-context", "run"],
+        environment,
+      ),
       expectedOrigin: origin,
       method: "POST",
       headers: { "content-type": "application/json" },

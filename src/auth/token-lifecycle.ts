@@ -5,6 +5,7 @@ import { CliError, type ErrorCode } from "../errors.js";
 import type { AbilityMetadataCache } from "../cache/ability-cache.js";
 import type { ProfileLockManager } from "../config/lock.js";
 import type { SiteProfile } from "../config/profiles.js";
+import type { SiteUrlEnvironment } from "../config/site-url.js";
 import type {
   AccessTokenProvider,
   HttpClient,
@@ -87,6 +88,7 @@ export class TokenLifecycle implements AccessTokenProvider {
     private readonly http: HttpClient,
     private readonly timeoutMs = 30_000,
     private readonly now: () => number = Date.now,
+    private readonly environment: SiteUrlEnvironment = process.env,
   ) {
     this.target = { profileName: profile.name, origin: profile.origin };
   }
@@ -174,7 +176,11 @@ export class TokenLifecycle implements AccessTokenProvider {
         );
         const value = await this.http.authenticatedJson(
           {
-            url: abilityListUrl(this.profile.siteUrl, resource.resource),
+            url: abilityListUrl(
+              this.profile.siteUrl,
+              resource.resource,
+              this.environment,
+            ),
             expectedOrigin: this.profile.origin,
             timeoutMs: this.timeoutMs,
           },
@@ -448,9 +454,18 @@ function isConfirmedUnauthorized(error: unknown): boolean {
   );
 }
 
-function abilityListUrl(siteUrl: string, resource: string): string {
+function abilityListUrl(
+  siteUrl: string,
+  resource: string,
+  environment?: SiteUrlEnvironment,
+): string {
   const url = new URL(
-    restUrlFromResource(siteUrl, resource, ["wp-abilities", "v1", "abilities"]),
+    restUrlFromResource(
+      siteUrl,
+      resource,
+      ["wp-abilities", "v1", "abilities"],
+      environment,
+    ),
   );
   url.searchParams.set("per_page", "1");
   url.searchParams.set("page", "1");

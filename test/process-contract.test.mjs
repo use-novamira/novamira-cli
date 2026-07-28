@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
@@ -61,6 +62,44 @@ test("implemented composite commands proceed to deterministic site selection", a
     );
     assert.equal(JSON.parse(output.read().stdout).error.code, "site_required");
     assert.equal(output.read().stderr, "");
+  }
+});
+
+test("main passes its injected insecure HTTP policy to site discovery", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end("{}");
+  });
+  await new Promise((resolve) => server.listen(0, "0.0.0.0", resolve));
+  try {
+    const address = server.address();
+    assert.notEqual(address, null);
+    assert.equal(typeof address, "object");
+    const output = capture();
+    assert.equal(
+      await main(
+        [
+          "--json",
+          "auth",
+          "login",
+          `http://0.0.0.0:${address.port}`,
+          "--no-open",
+        ],
+        output.streams,
+        { ...environment, NOVAMIRA_ALLOW_INSECURE_HTTP: "1" },
+      ),
+      4,
+    );
+    assert.equal(
+      JSON.parse(output.read().stdout).error.code,
+      "server_unsupported",
+    );
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) =>
+        error === undefined ? resolve() : reject(error),
+      ),
+    );
   }
 });
 

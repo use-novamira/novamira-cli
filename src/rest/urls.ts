@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { CliError } from "../errors.js";
-import { normalizeSiteUrl } from "../config/site-url.js";
+import {
+  normalizeSiteUrl,
+  type SiteUrlEnvironment,
+} from "../config/site-url.js";
 
 export type WellKnownDocument =
   "oauth-protected-resource" | "oauth-authorization-server";
@@ -10,31 +13,44 @@ export type WellKnownDocument =
 export function wellKnownUrl(
   site: string,
   document: WellKnownDocument,
+  environment?: SiteUrlEnvironment,
 ): string {
-  return appendPath(normalizeSiteUrl(site).siteUrl, [".well-known", document]);
+  return appendPath(normalizeSiteUrl(site, environment).siteUrl, [
+    ".well-known",
+    document,
+  ]);
 }
 
-export function restUrl(site: string, segments: readonly string[]): string {
+export function restUrl(
+  site: string,
+  segments: readonly string[],
+  environment?: SiteUrlEnvironment,
+): string {
   if (segments.length === 0 || segments.some((segment) => segment === ""))
     throw new CliError("usage_error", "A REST path must not be empty.");
-  return appendPath(normalizeSiteUrl(site).siteUrl, ["wp-json", ...segments]);
+  return appendPath(normalizeSiteUrl(site, environment).siteUrl, [
+    "wp-json",
+    ...segments,
+  ]);
 }
 
 export function restUrlFromResource(
   site: string,
   resource: string,
   segments: readonly string[],
+  environment?: SiteUrlEnvironment,
 ): string {
-  const style = restResourceStyle(site, resource);
+  const style = restResourceStyle(site, resource, environment);
   return style === "pretty"
-    ? restUrl(site, segments)
-    : plainRestUrl(site, segments);
+    ? restUrl(site, segments, environment)
+    : plainRestUrl(site, segments, environment);
 }
 
 export function matchesRestUrl(
   site: string,
   value: string,
   segments: readonly string[],
+  environment?: SiteUrlEnvironment,
 ): boolean {
   let candidate: URL;
   try {
@@ -42,16 +58,25 @@ export function matchesRestUrl(
   } catch {
     return false;
   }
-  return [restUrl(site, segments), plainRestUrl(site, segments)].some(
-    (expected) => equivalentUrl(candidate, new URL(expected)),
-  );
+  return [
+    restUrl(site, segments, environment),
+    plainRestUrl(site, segments, environment),
+  ].some((expected) => equivalentUrl(candidate, new URL(expected)));
 }
 
-export function abilityItemUrl(site: string, abilityName: string): string {
+export function abilityItemUrl(
+  site: string,
+  abilityName: string,
+  environment?: SiteUrlEnvironment,
+): string {
   const segments = abilityName.split("/");
   if (segments.length < 2 || segments.some((segment) => segment === ""))
     throw new CliError("usage_error", "Ability name is invalid.");
-  return restUrl(site, ["wp-abilities", "v1", "abilities", ...segments]);
+  return restUrl(
+    site,
+    ["wp-abilities", "v1", "abilities", ...segments],
+    environment,
+  );
 }
 
 export function sameOriginEndpoint(
@@ -89,27 +114,39 @@ function appendPath(base: string, segments: readonly string[]): string {
   return url.toString();
 }
 
-function plainRestUrl(site: string, segments: readonly string[]): string {
+function plainRestUrl(
+  site: string,
+  segments: readonly string[],
+  environment?: SiteUrlEnvironment,
+): string {
   if (segments.length === 0 || segments.some((segment) => segment === ""))
     throw new CliError("usage_error", "A REST path must not be empty.");
-  const base = normalizeSiteUrl(site).siteUrl;
+  const base = normalizeSiteUrl(site, environment).siteUrl;
   const url = new URL(`${base.replace(/\/$/, "")}/index.php`);
   url.searchParams.set("rest_route", `/${segments.join("/")}`);
   return url.toString();
 }
 
-function restResourceStyle(site: string, resource: string): "pretty" | "plain" {
+function restResourceStyle(
+  site: string,
+  resource: string,
+  environment?: SiteUrlEnvironment,
+): "pretty" | "plain" {
   const candidate = new URL(resource);
   const route = ["mcp", "novamira-oauth"];
-  if (equivalentUrl(candidate, new URL(restUrl(site, route)))) return "pretty";
-  if (equivalentUrl(candidate, new URL(plainRestUrl(site, route))))
+  if (equivalentUrl(candidate, new URL(restUrl(site, route, environment))))
+    return "pretty";
+  if (equivalentUrl(candidate, new URL(plainRestUrl(site, route, environment))))
     return "plain";
   throw new CliError(
     "server_unsupported",
     "OAuth resource does not match this WordPress site.",
     {
       details: {
-        expectedResources: [restUrl(site, route), plainRestUrl(site, route)],
+        expectedResources: [
+          restUrl(site, route, environment),
+          plainRestUrl(site, route, environment),
+        ],
         advertisedResource: candidate.toString(),
       },
     },

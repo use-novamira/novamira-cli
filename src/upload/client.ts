@@ -7,6 +7,7 @@ import { Readable } from "node:stream";
 import type { AbilityClient, AbilityWarning } from "../abilities/client.js";
 import type { TokenLifecycle } from "../auth/token-lifecycle.js";
 import type { SiteProfile } from "../config/profiles.js";
+import type { SiteUrlEnvironment } from "../config/site-url.js";
 import { CliError } from "../errors.js";
 import type { HttpClient } from "../rest/http-client.js";
 import { matchesRestUrl, sameOriginEndpoint } from "../rest/urls.js";
@@ -40,6 +41,7 @@ export class CompositeUploader {
     private readonly http: Pick<HttpClient, "streamJsonResponse">,
     private readonly timeoutMs = 30_000,
     private readonly now: () => number = Date.now,
+    private readonly environment: SiteUrlEnvironment = process.env,
   ) {}
 
   async upload(
@@ -115,11 +117,12 @@ export class CompositeUploader {
       "Temporary upload endpoint",
     );
     if (
-      !matchesRestUrl(this.profile.siteUrl, url.toString(), [
-        "novamira",
-        "v1",
-        "upload",
-      ])
+      !matchesRestUrl(
+        this.profile.siteUrl,
+        url.toString(),
+        ["novamira", "v1", "upload"],
+        this.environment,
+      )
     )
       throw invalidGrant("The temporary upload endpoint route is invalid.");
     if (

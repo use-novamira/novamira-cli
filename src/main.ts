@@ -23,6 +23,7 @@ import { platformPaths, type PathEnvironment } from "./config/paths.js";
 import { defaultFileSecurity } from "./config/file-security.js";
 import { ProfileLockManager } from "./config/lock.js";
 import { ProfileStore, type SelectionEnvironment } from "./config/profiles.js";
+import type { SiteUrlEnvironment } from "./config/site-url.js";
 import { createCredentialStore } from "./auth/credential-store.js";
 import { AbilityMetadataCache } from "./cache/ability-cache.js";
 import { HttpClient } from "./rest/http-client.js";
@@ -57,7 +58,11 @@ import { DEFAULT_REGISTRY } from "./update/registry.js";
 export const VERSION = "1.0.0";
 
 export interface RuntimeEnvironment
-  extends PathEnvironment, SelectionEnvironment, UpdateCheckEnvironment {
+  extends
+    PathEnvironment,
+    SelectionEnvironment,
+    SiteUrlEnvironment,
+    UpdateCheckEnvironment {
   readonly NO_COLOR?: string;
   readonly NOVAMIRA_CREDENTIAL_BACKEND?: string;
 }
@@ -112,20 +117,26 @@ export async function main(
         streams.stderr.write(`HTTP: ${JSON.stringify(diagnostic)}\n`);
     },
   });
-  const metadata = new MetadataClient(http);
-  const profiles = new ProfileStore(paths.configFile, locks, security, [
-    {
-      cleanup: async (profile) => {
-        await (
-          await getCredentialStore()
-        ).deleteUnderLock({
-          profileName: profile.name,
-          origin: profile.origin,
-        });
+  const metadata = new MetadataClient(http, Date.now, environment);
+  const profiles = new ProfileStore(
+    paths.configFile,
+    locks,
+    security,
+    [
+      {
+        cleanup: async (profile) => {
+          await (
+            await getCredentialStore()
+          ).deleteUnderLock({
+            profileName: profile.name,
+            origin: profile.origin,
+          });
+        },
       },
-    },
-    abilityCache,
-  ]);
+      abilityCache,
+    ],
+    environment,
+  );
 
   const program = createProgram(
     VERSION,
@@ -153,6 +164,8 @@ export async function main(
           new LoopbackCallbackFactory(),
           new SystemBrowserLauncher(),
           new TerminalLoginInteraction((value) => streams.stderr.write(value)),
+          Date.now,
+          environment,
         );
         const result = await login.login({
           siteUrl,
@@ -188,6 +201,8 @@ export async function main(
           metadata,
           http,
           parsedOptions.timeout,
+          Date.now,
+          environment,
         );
         if (command === "auth status") {
           const data = await lifecycle.status();
@@ -238,6 +253,8 @@ export async function main(
           metadata,
           http,
           parsedOptions.timeout,
+          Date.now,
+          environment,
         );
         const abilities = new AbilityClient(
           profile,
@@ -245,6 +262,7 @@ export async function main(
           lifecycle,
           abilityCache,
           parsedOptions.timeout,
+          environment,
         );
         const meta = {
           requestId,
@@ -303,6 +321,8 @@ export async function main(
             abilities,
             http,
             parsedOptions.timeout,
+            Date.now,
+            environment,
           ).upload(localPath, remotePath);
           if (!parsedOptions.json && !parsedOptions.quiet)
             for (const warning of result.warnings)
@@ -489,6 +509,8 @@ export async function main(
                     metadata,
                     http,
                     parsedOptions.timeout,
+                    Date.now,
+                    environment,
                   ),
                 createAbilityClient: (profile, lifecycle) =>
                   new AbilityClient(
@@ -497,6 +519,7 @@ export async function main(
                     lifecycle,
                     abilityCache,
                     parsedOptions.timeout,
+                    environment,
                   ),
                 ...(!parsedOptions.json &&
                 process.stdin.isTTY &&
@@ -529,6 +552,8 @@ export async function main(
                           new TerminalLoginInteraction((value) =>
                             streams.stderr.write(value),
                           ),
+                          Date.now,
+                          environment,
                         ).login({
                           siteUrl: profile.siteUrl,
                           name: profile.name,

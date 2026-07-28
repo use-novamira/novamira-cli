@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { normalizeSiteUrl } from "../config/site-url.js";
+import {
+  normalizeSiteUrl,
+  type SiteUrlEnvironment,
+} from "../config/site-url.js";
 import { CliError } from "../errors.js";
 import type { HttpClient } from "../rest/http-client.js";
 import {
@@ -62,17 +65,22 @@ export class MetadataClient {
   constructor(
     private readonly http: HttpClient,
     private readonly now: () => number = Date.now,
+    private readonly environment: SiteUrlEnvironment = process.env,
   ) {}
 
   async protectedResource(site: string): Promise<ProtectedResourceMetadata> {
-    const base = normalizeSiteUrl(site).siteUrl;
+    const base = normalizeSiteUrl(site, this.environment).siteUrl;
     const cached = this.protectedCache.get(base);
     if (cached !== undefined && cached.expiresAt > this.now())
       return cached.value;
     const raw = await this.metadataRequest(
-      wellKnownUrl(base, "oauth-protected-resource"),
+      wellKnownUrl(base, "oauth-protected-resource", this.environment),
     );
-    const value = validateProtectedResourceMetadata(raw, base);
+    const value = validateProtectedResourceMetadata(
+      raw,
+      base,
+      this.environment,
+    );
     assertCompatible(value.novamira);
     this.protectedCache.set(base, {
       expiresAt: this.now() + COMPATIBILITY_CACHE_TTL_MS,
@@ -84,31 +92,34 @@ export class MetadataClient {
   async probeProtectedResourceUnvalidated(
     site: string,
   ): Promise<ProtectedResourceMetadata> {
-    const base = normalizeSiteUrl(site).siteUrl;
+    const base = normalizeSiteUrl(site, this.environment).siteUrl;
     const raw = await this.metadataRequest(
-      wellKnownUrl(base, "oauth-protected-resource"),
+      wellKnownUrl(base, "oauth-protected-resource", this.environment),
     );
-    return validateProtectedResourceMetadata(raw, base);
+    return validateProtectedResourceMetadata(raw, base, this.environment);
   }
 
   async authorizationServer(
     site: string,
     protectedMetadata?: ProtectedResourceMetadata,
   ): Promise<AuthorizationServerMetadata> {
-    const base = normalizeSiteUrl(site).siteUrl;
+    const base = normalizeSiteUrl(site, this.environment).siteUrl;
     const resource = protectedMetadata ?? (await this.protectedResource(base));
     const issuer = resource.authorization_servers[0];
     if (issuer === undefined)
       throw unsupported("Authorization server metadata is missing.");
     const raw = await this.metadataRequest(
-      wellKnownUrl(issuer, "oauth-authorization-server"),
+      wellKnownUrl(issuer, "oauth-authorization-server", this.environment),
     );
-    return validateAuthorizationServerMetadata(raw, base);
+    return validateAuthorizationServerMetadata(raw, base, this.environment);
   }
 
   clear(site?: string): void {
     if (site === undefined) this.protectedCache.clear();
-    else this.protectedCache.delete(normalizeSiteUrl(site).siteUrl);
+    else
+      this.protectedCache.delete(
+        normalizeSiteUrl(site, this.environment).siteUrl,
+      );
   }
 
   private async metadataRequest(url: string): Promise<unknown> {
@@ -125,11 +136,12 @@ export class MetadataClient {
 export function validateProtectedResourceMetadata(
   value: unknown,
   site: string,
+  environment?: SiteUrlEnvironment,
 ): ProtectedResourceMetadata {
   const object = record(value, "Protected-resource metadata");
-  const { siteUrl: base, origin } = normalizeSiteUrl(site);
+  const { siteUrl: base, origin } = normalizeSiteUrl(site, environment);
   const resource = endpointString(object.resource, origin, "OAuth resource");
-  restUrlFromResource(base, resource, ["mcp", "novamira-oauth"]);
+  restUrlFromResource(base, resource, ["mcp", "novamira-oauth"], environment);
   const authorizationServers = stringArray(
     object.authorization_servers,
     "authorization_servers",
@@ -138,6 +150,7 @@ export function validateProtectedResourceMetadata(
   try {
     authorizationServer = normalizeSiteUrl(
       authorizationServers[0] ?? "",
+      environment,
     ).siteUrl;
   } catch (cause) {
     throw unsupported(
@@ -168,9 +181,10 @@ export function validateProtectedResourceMetadata(
 export function validateAuthorizationServerMetadata(
   value: unknown,
   site: string,
+  environment?: SiteUrlEnvironment,
 ): AuthorizationServerMetadata {
   const object = record(value, "Authorization-server metadata");
-  const { siteUrl: base, origin } = normalizeSiteUrl(site);
+  const { siteUrl: base, origin } = normalizeSiteUrl(site, environment);
   const issuer = endpointString(object.issuer, origin, "issuer").replace(
     /\/$/,
     "",

@@ -9,6 +9,7 @@ import {
 } from "../auth/metadata.js";
 import type { AbilityMetadataCache } from "../cache/ability-cache.js";
 import type { SiteProfile } from "../config/profiles.js";
+import type { SiteUrlEnvironment } from "../config/site-url.js";
 import { CliError } from "../errors.js";
 import { restUrl, restUrlFromResource } from "../rest/urls.js";
 import { WordPressPaginator } from "./paginator.js";
@@ -55,13 +56,18 @@ export class AbilityClient {
     private readonly tokens: TokenLifecycle,
     private readonly cache: AbilityMetadataCache,
     private readonly timeoutMs = 30_000,
+    private readonly environment: SiteUrlEnvironment = process.env,
   ) {}
 
   async discover(): Promise<DiscoverResult> {
     const publicMetadata = await this.metadata.protectedResource(
       this.profile.siteUrl,
     );
-    const resource = routingResource(this.profile.siteUrl, publicMetadata);
+    const resource = routingResource(
+      this.profile.siteUrl,
+      publicMetadata,
+      this.environment,
+    );
     const records = await this.listAbilities(resource);
     let context: AbilityRecord;
     try {
@@ -95,8 +101,13 @@ export class AbilityClient {
       {
         url: restUrlFromResource(
           this.profile.siteUrl,
-          routingResource(this.profile.siteUrl, publicMetadata),
+          routingResource(
+            this.profile.siteUrl,
+            publicMetadata,
+            this.environment,
+          ),
           ["wp-abilities", "v1", "abilities", ...abilityName.split("/")],
+          this.environment,
         ),
         expectedOrigin: this.profile.origin,
         timeoutMs: this.timeoutMs,
@@ -164,8 +175,13 @@ export class AbilityClient {
       {
         url: restUrlFromResource(
           this.profile.siteUrl,
-          routingResource(this.profile.siteUrl, publicMetadata),
+          routingResource(
+            this.profile.siteUrl,
+            publicMetadata,
+            this.environment,
+          ),
           ["novamira", "v1", "abilities", ...abilityName.split("/"), "run"],
+          this.environment,
         ),
         expectedOrigin: this.profile.origin,
         method: "POST",
@@ -193,13 +209,15 @@ export class AbilityClient {
     resource ??= routingResource(
       this.profile.siteUrl,
       await this.metadata.protectedResource(this.profile.siteUrl),
+      this.environment,
     );
     const endpoint = new URL(
-      restUrlFromResource(this.profile.siteUrl, resource, [
-        "wp-abilities",
-        "v1",
-        "abilities",
-      ]),
+      restUrlFromResource(
+        this.profile.siteUrl,
+        resource,
+        ["wp-abilities", "v1", "abilities"],
+        this.environment,
+      ),
     );
     return new WordPressPaginator<AbilityRecord & { readonly name: string }>({
       endpoint,
@@ -228,17 +246,16 @@ export class AbilityClient {
     resource ??= routingResource(
       this.profile.siteUrl,
       await this.metadata.protectedResource(this.profile.siteUrl),
+      this.environment,
     );
     const raw = await this.tokens.authenticatedJson(
       {
-        url: restUrlFromResource(this.profile.siteUrl, resource, [
-          "novamira",
-          "v1",
-          "abilities",
-          "novamira",
-          "agent-context",
-          "run",
-        ]),
+        url: restUrlFromResource(
+          this.profile.siteUrl,
+          resource,
+          ["novamira", "v1", "abilities", "novamira", "agent-context", "run"],
+          this.environment,
+        ),
         expectedOrigin: this.profile.origin,
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -278,8 +295,11 @@ export class AbilityClient {
 function routingResource(
   site: string,
   metadata: { readonly resource?: string },
+  environment?: SiteUrlEnvironment,
 ): string {
-  return metadata.resource ?? restUrl(site, ["mcp", "novamira-oauth"]);
+  return (
+    metadata.resource ?? restUrl(site, ["mcp", "novamira-oauth"], environment)
+  );
 }
 
 function cachedRecord(
