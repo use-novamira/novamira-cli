@@ -2,58 +2,35 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { randomUUID } from "node:crypto";
-import { createInterface } from "node:readline/promises";
-import { asCliError, CliError, exitCodeFor } from "./errors.js";
+import { createCredentialStore } from "./auth/credential-store.js";
+import { MetadataClient } from "./auth/metadata.js";
+import { AbilityMetadataCache } from "./cache/ability-cache.js";
+import { createCommandHandlers } from "./cli/commands.js";
 import {
   createProgram,
   isCommanderUsageError,
   isHelpExit,
   type GlobalOptions,
 } from "./cli/program.js";
-import {
-  writeHumanFailure,
-  writeHumanAbilityDescription,
-  writeHumanSuccess,
-  writeJsonFailure,
-  writeJsonSuccess,
-  type OutputStreams,
-} from "./output/render.js";
-import { redact } from "./output/redact.js";
-import { platformPaths, type PathEnvironment } from "./config/paths.js";
 import { defaultFileSecurity } from "./config/file-security.js";
 import { ProfileLockManager } from "./config/lock.js";
+import { platformPaths, type PathEnvironment } from "./config/paths.js";
 import { ProfileStore, type SelectionEnvironment } from "./config/profiles.js";
 import type { SiteUrlEnvironment } from "./config/site-url.js";
-import { createCredentialStore } from "./auth/credential-store.js";
-import { AbilityMetadataCache } from "./cache/ability-cache.js";
+import { asCliError, CliError, exitCodeFor } from "./errors.js";
+import { ArtifactStore } from "./output/artifacts.js";
+import { redact } from "./output/redact.js";
+import {
+  writeHumanFailure,
+  writeJsonFailure,
+  type OutputStreams,
+} from "./output/render.js";
 import { HttpClient } from "./rest/http-client.js";
-import { MetadataClient } from "./auth/metadata.js";
-import {
-  LoginService,
-  SystemBrowserLauncher,
-  TerminalLoginInteraction,
-} from "./auth/login.js";
-import { LoopbackCallbackFactory } from "./auth/loopback.js";
-import { TokenLifecycle } from "./auth/token-lifecycle.js";
-import { AbilityClient } from "./abilities/client.js";
-import { parseRunInput } from "./abilities/input.js";
-import {
-  ArtifactStore,
-  isCredentialClassifiedResult,
-} from "./output/artifacts.js";
-import { getSiteSkill } from "./skills/client.js";
-import { CompositeUploader } from "./upload/client.js";
-import { runOfflineDoctor } from "./doctor/engine.js";
-import { runOnlineDoctor } from "./doctor/online.js";
-import { GuideStore } from "./guides/store.js";
 import {
   UpdateChecker,
   updateCheckEnabled,
-  updateNotice,
   type UpdateCheckEnvironment,
 } from "./update/notifier.js";
-import { installVersion, SpawnInstallRunner } from "./update/install.js";
-import { DEFAULT_REGISTRY } from "./update/registry.js";
 
 export const VERSION = "1.0.0";
 
@@ -74,7 +51,8 @@ export async function main(
 ): Promise<number> {
   const requestId = randomUUID();
   let options: GlobalOptions | undefined;
-  let executedCommand: string | undefined;
+  let commandExecuted = false;
+  let updateNoticeSuppressed = false;
 
   const paths = platformPaths(environment);
   const security = defaultFileSecurity();
@@ -138,445 +116,28 @@ export async function main(
     environment,
   );
 
-  const program = createProgram(
-    VERSION,
-    async (command, parsedOptions, args) => {
+  const handlers = createCommandHandlers({
+    version: VERSION,
+    requestId,
+    paths,
+    security,
+    locks,
+    profiles,
+    abilityCache,
+    artifacts,
+    metadata,
+    http,
+    streams,
+    environment,
+    getCredentialStore,
+    createUpdateChecker,
+    onInvocation: (parsedOptions, suppressUpdateNotice) => {
       options = parsedOptions;
-      executedCommand = command;
-      if (command.startsWith("version:")) {
-        const version = command.slice("version:".length);
-        if (parsedOptions.json)
-          writeJsonSuccess(streams, { version }, { requestId });
-        else writeHumanSuccess(streams, version);
-        return;
-      }
-      if (command === "auth login") {
-        const siteUrl = args[0];
-        if (siteUrl === undefined)
-          throw new CliError("usage_error", "A site URL is required.");
-        const login = new LoginService(
-          profiles,
-          locks,
-          await getCredentialStore(),
-          abilityCache,
-          metadata,
-          http,
-          new LoopbackCallbackFactory(),
-          new SystemBrowserLauncher(),
-          new TerminalLoginInteraction((value) => streams.stderr.write(value)),
-          Date.now,
-          environment,
-        );
-        const result = await login.login({
-          siteUrl,
-          ...(parsedOptions.name === undefined
-            ? {}
-            : { name: parsedOptions.name }),
-          access: parsedOptions.access ?? "full",
-          noOpen: parsedOptions.open === false,
-          timeoutMs: parsedOptions.timeout,
-        });
-        const data = {
-          site: result.profile.name,
-          siteUrl: result.profile.siteUrl,
-          scope: result.scope,
-          expiresAt: result.expiresAt,
-        };
-        if (parsedOptions.json)
-          writeJsonSuccess(streams, data, {
-            requestId,
-            site: result.profile.name,
-            origin: result.profile.origin,
-          });
-        else writeHumanSuccess(streams, data);
-        return;
-      }
-      if (command === "auth status" || command === "auth logout") {
-        const profile = await profiles.select(parsedOptions.site, environment);
-        const lifecycle = new TokenLifecycle(
-          profile,
-          locks,
-          await getCredentialStore(),
-          abilityCache,
-          metadata,
-          http,
-          parsedOptions.timeout,
-          Date.now,
-          environment,
-        );
-        if (command === "auth status") {
-          const data = await lifecycle.status();
-          if (parsedOptions.json)
-            writeJsonSuccess(streams, data, {
-              requestId,
-              site: profile.name,
-              origin: profile.origin,
-            });
-          else writeHumanSuccess(streams, data);
-          return;
-        }
-        const data = await lifecycle.logout();
-        if (data.warning !== undefined && !parsedOptions.quiet)
-          streams.stderr.write(`Warning: ${data.warning}\n`);
-        const warnings =
-          data.warning === undefined
-            ? undefined
-            : [
-                {
-                  code: "remote_revocation_unavailable",
-                  message: data.warning,
-                },
-              ];
-        if (parsedOptions.json)
-          writeJsonSuccess(streams, data, {
-            requestId,
-            site: profile.name,
-            origin: profile.origin,
-            ...(warnings === undefined ? {} : { warnings }),
-          });
-        else writeHumanSuccess(streams, data);
-        return;
-      }
-      if (
-        command === "discover" ||
-        command === "describe" ||
-        command === "run" ||
-        command === "skill get" ||
-        command === "upload"
-      ) {
-        const profile = await profiles.select(parsedOptions.site, environment);
-        const lifecycle = new TokenLifecycle(
-          profile,
-          locks,
-          await getCredentialStore(),
-          abilityCache,
-          metadata,
-          http,
-          parsedOptions.timeout,
-          Date.now,
-          environment,
-        );
-        const abilities = new AbilityClient(
-          profile,
-          metadata,
-          lifecycle,
-          abilityCache,
-          parsedOptions.timeout,
-          environment,
-        );
-        const meta = {
-          requestId,
-          site: profile.name,
-          origin: profile.origin,
-        };
-        if (command === "discover") {
-          const data = await abilities.discover();
-          if (parsedOptions.json) writeJsonSuccess(streams, data, meta);
-          else writeHumanSuccess(streams, data);
-          return;
-        }
-        if (command === "skill get") {
-          const slug = args[0];
-          if (slug === undefined)
-            throw new CliError("usage_error", "A skill slug is required.");
-          const result = await getSiteSkill(abilities, slug);
-          const budgeted = await artifacts.budget(result.data, {
-            maxOutputBytes: parsedOptions.maxOutput,
-            credentialClassified: isCredentialClassifiedResult(result.data),
-          });
-          const warnings =
-            result.warnings.length === 0 ? undefined : result.warnings;
-          if (!parsedOptions.json && !parsedOptions.quiet)
-            for (const warning of result.warnings)
-              streams.stderr.write(`Warning: ${warning.message}\n`);
-          const skillMeta = {
-            ...meta,
-            ...(warnings === undefined ? {} : { warnings }),
-            ...(budgeted.truncated
-              ? {
-                  truncated: true,
-                  bytes: budgeted.bytes,
-                  ...(budgeted.artifact === undefined
-                    ? {}
-                    : { artifact: budgeted.artifact }),
-                }
-              : {}),
-          };
-          if (parsedOptions.json)
-            writeJsonSuccess(streams, budgeted.data, skillMeta);
-          else writeHumanSuccess(streams, budgeted.data);
-          return;
-        }
-        if (command === "upload") {
-          const localPath = args[0];
-          const remotePath = args[1];
-          if (localPath === undefined || remotePath === undefined)
-            throw new CliError(
-              "usage_error",
-              "Local and remote upload paths are required.",
-            );
-          const result = await new CompositeUploader(
-            profile,
-            lifecycle,
-            abilities,
-            http,
-            parsedOptions.timeout,
-            Date.now,
-            environment,
-          ).upload(localPath, remotePath);
-          if (!parsedOptions.json && !parsedOptions.quiet)
-            for (const warning of result.warnings)
-              streams.stderr.write(`Warning: ${warning.message}\n`);
-          const warnings =
-            result.warnings.length === 0 ? undefined : result.warnings;
-          if (parsedOptions.json)
-            writeJsonSuccess(streams, result.data, {
-              ...meta,
-              ...(warnings === undefined ? {} : { warnings }),
-            });
-          else writeHumanSuccess(streams, result.data);
-          return;
-        }
-        const abilityName = args[0];
-        if (abilityName === undefined)
-          throw new CliError("usage_error", "An Ability name is required.");
-        if (command === "run") {
-          const input = await parseRunInput(parsedOptions.input);
-          const result = await abilities.run(abilityName, input, {
-            fresh: parsedOptions.fresh === true,
-            confirmed: parsedOptions.yes,
-            ...(!parsedOptions.json &&
-            process.stdin.isTTY &&
-            process.stderr.isTTY
-              ? {
-                  confirm: async (name: string) => {
-                    const prompt = createInterface({
-                      input: process.stdin,
-                      output: process.stderr,
-                    });
-                    try {
-                      const answer = await prompt.question(
-                        `Execute destructive Ability ${name}? [y/N] `,
-                      );
-                      return /^(y|yes)$/i.test(answer.trim());
-                    } finally {
-                      prompt.close();
-                    }
-                  },
-                }
-              : {}),
-          });
-          const budgeted = await artifacts.budget(result.data, {
-            maxOutputBytes: parsedOptions.maxOutput,
-            credentialClassified: isCredentialClassifiedResult(result.data),
-          });
-          const warnings =
-            result.warnings.length === 0 ? undefined : result.warnings;
-          if (!parsedOptions.json && !parsedOptions.quiet)
-            for (const warning of result.warnings)
-              streams.stderr.write(`Warning: ${warning.message}\n`);
-          const runMeta = {
-            ...meta,
-            ...(warnings === undefined ? {} : { warnings }),
-            ...(budgeted.truncated
-              ? {
-                  truncated: true,
-                  bytes: budgeted.bytes,
-                  ...(budgeted.artifact === undefined
-                    ? {}
-                    : { artifact: budgeted.artifact }),
-                }
-              : {}),
-          };
-          if (parsedOptions.json)
-            writeJsonSuccess(streams, budgeted.data, runMeta);
-          else writeHumanSuccess(streams, budgeted.data);
-          return;
-        }
-        const data = await abilities.describe(abilityName);
-        if (parsedOptions.json) writeJsonSuccess(streams, data, meta);
-        else writeHumanAbilityDescription(streams, data);
-        return;
-      }
-      if (command === "sites list") {
-        const data = await profiles.list();
-        if (parsedOptions.json) writeJsonSuccess(streams, data, { requestId });
-        else writeHumanSuccess(streams, data);
-        return;
-      }
-      if (command === "sites remove") {
-        const name = args[0];
-        if (name === undefined)
-          throw new CliError("usage_error", "A profile name is required.");
-        const removed = await profiles.remove(name);
-        const data = { removed: removed.name, siteUrl: removed.siteUrl };
-        if (parsedOptions.json) writeJsonSuccess(streams, data, { requestId });
-        else writeHumanSuccess(streams, data);
-        return;
-      }
-      if (command === "guide list" || command === "guide get") {
-        const guides = new GuideStore();
-        if (command === "guide list") {
-          const data = { version: VERSION, guides: await guides.list() };
-          if (parsedOptions.json)
-            writeJsonSuccess(streams, data, { requestId });
-          else writeHumanSuccess(streams, data);
-          return;
-        }
-        const name = args[0];
-        if (name === undefined)
-          throw new CliError("usage_error", "A guide name is required.");
-        const guide = await guides.get(name, parsedOptions.full === true);
-        if (parsedOptions.json)
-          writeJsonSuccess(
-            streams,
-            { ...guide, version: VERSION },
-            { requestId },
-          );
-        else writeHumanSuccess(streams, guide.content);
-        return;
-      }
-      if (command === "update") {
-        const status = await createUpdateChecker(parsedOptions.timeout).check();
-        if (parsedOptions.check === true || !status.updateAvailable) {
-          const data = {
-            current: status.current,
-            latest: status.latest,
-            updateAvailable: status.updateAvailable,
-            ...(parsedOptions.check === true ? {} : { updated: false }),
-          };
-          if (!parsedOptions.json && !parsedOptions.quiet)
-            streams.stderr.write(
-              status.updateAvailable
-                ? `${updateNotice(status)}\n`
-                : `novamira ${status.current} is the latest release.\n`,
-            );
-          if (parsedOptions.json)
-            writeJsonSuccess(streams, data, { requestId });
-          else writeHumanSuccess(streams, data);
-          return;
-        }
-        if (!parsedOptions.quiet)
-          streams.stderr.write(
-            `Updating novamira ${status.current} -> ${status.latest}...\n`,
-          );
-        const data = await installVersion(
-          status.current,
-          status.latest,
-          // An explicit --timeout bounds the installer too; otherwise the
-          // installer keeps its own longer default.
-          new SpawnInstallRunner(
-            parsedOptions.timeoutExplicit ? parsedOptions.timeout : undefined,
-          ),
-          (chunk) => {
-            if (!parsedOptions.quiet) streams.stderr.write(chunk);
-          },
-          undefined,
-          environment.NOVAMIRA_REGISTRY ?? DEFAULT_REGISTRY,
-        );
-        if (parsedOptions.json) writeJsonSuccess(streams, data, { requestId });
-        else writeHumanSuccess(streams, data);
-        return;
-      }
-      if (command === "doctor") {
-        const commonDoctor = {
-          paths,
-          security,
-          profiles,
-          credentials: await getCredentialStore(),
-          abilityCache,
-          artifacts,
-          environment,
-        };
-        const doctorOptions = {
-          fix: parsedOptions.fix === true,
-          ...(parsedOptions.site === undefined
-            ? {}
-            : { site: parsedOptions.site }),
-        };
-        const data = parsedOptions.offline
-          ? await runOfflineDoctor(commonDoctor, doctorOptions)
-          : await runOnlineDoctor(
-              {
-                ...commonDoctor,
-                metadata,
-                createTokenLifecycle: (profile) =>
-                  new TokenLifecycle(
-                    profile,
-                    locks,
-                    commonDoctor.credentials,
-                    abilityCache,
-                    metadata,
-                    http,
-                    parsedOptions.timeout,
-                    Date.now,
-                    environment,
-                  ),
-                createAbilityClient: (profile, lifecycle) =>
-                  new AbilityClient(
-                    profile,
-                    metadata,
-                    lifecycle,
-                    abilityCache,
-                    parsedOptions.timeout,
-                    environment,
-                  ),
-                ...(!parsedOptions.json &&
-                process.stdin.isTTY &&
-                process.stderr.isTTY
-                  ? {
-                      confirmLogin: async (profile, access) => {
-                        const prompt = createInterface({
-                          input: process.stdin,
-                          output: process.stderr,
-                        });
-                        try {
-                          const answer = await prompt.question(
-                            `OAuth login is required for ${profile.name} with ${access} access. Continue? [y/N] `,
-                          );
-                          return /^(y|yes)$/i.test(answer.trim());
-                        } finally {
-                          prompt.close();
-                        }
-                      },
-                      login: async (profile, access) => {
-                        await new LoginService(
-                          profiles,
-                          locks,
-                          commonDoctor.credentials,
-                          abilityCache,
-                          metadata,
-                          http,
-                          new LoopbackCallbackFactory(),
-                          new SystemBrowserLauncher(),
-                          new TerminalLoginInteraction((value) =>
-                            streams.stderr.write(value),
-                          ),
-                          Date.now,
-                          environment,
-                        ).login({
-                          siteUrl: profile.siteUrl,
-                          name: profile.name,
-                          access,
-                          noOpen: false,
-                          timeoutMs: parsedOptions.timeout,
-                        });
-                      },
-                    }
-                  : {}),
-              },
-              doctorOptions,
-            );
-        if (parsedOptions.json) writeJsonSuccess(streams, data, { requestId });
-        else writeHumanSuccess(streams, data);
-        return;
-      }
-      throw new CliError(
-        "internal_error",
-        `${command} is not implemented in this build.`,
-      );
+      commandExecuted = true;
+      updateNoticeSuppressed = suppressUpdateNotice;
     },
-  );
+  });
+  const program = createProgram(VERSION, handlers);
   program.configureOutput({
     writeOut: (value) => streams.stdout.write(value),
     writeErr: () => undefined,
@@ -585,9 +146,8 @@ export async function main(
   const emitUpdateNotice = async (): Promise<void> => {
     if (
       options?.quiet === true ||
-      options?.offline === true ||
-      executedCommand === undefined ||
-      executedCommand === "update" ||
+      updateNoticeSuppressed ||
+      !commandExecuted ||
       !updateCheckEnabled(environment)
     )
       return;

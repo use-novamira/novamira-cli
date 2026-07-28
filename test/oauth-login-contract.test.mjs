@@ -20,6 +20,28 @@ import { ProfileStore } from "../dist/config/profiles.js";
 import { createProgram } from "../dist/cli/program.js";
 import { HttpClient } from "../dist/rest/http-client.js";
 
+function commandHandlers(overrides = {}) {
+  const noop = () => undefined;
+  return {
+    version: noop,
+    authLogin: noop,
+    authStatus: noop,
+    authLogout: noop,
+    sitesList: noop,
+    sitesRemove: noop,
+    discover: noop,
+    describe: noop,
+    run: noop,
+    skillGet: noop,
+    upload: noop,
+    guideList: noop,
+    guideGet: noop,
+    update: noop,
+    doctor: noop,
+    ...overrides,
+  };
+}
+
 const compatibility = {
   plugin_version: "1.11.0",
   rest_api_version: 1,
@@ -250,9 +272,14 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
   assert.match(stderrOutput, /authorize\?state=temporary/);
 
   let parsed;
-  await createProgram("test", (command, options, args) => {
-    parsed = { command, options, args };
-  }).parseAsync(
+  await createProgram(
+    "test",
+    commandHandlers({
+      authLogin: (url, options) => {
+        parsed = { url, options };
+      },
+    }),
+  ).parseAsync(
     [
       "auth",
       "login",
@@ -265,23 +292,27 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
     ],
     { from: "user" },
   );
-  assert.equal(parsed.command, "auth login");
-  assert.deepEqual(parsed.args, ["https://example.test"]);
+  assert.equal(parsed.url, "https://example.test");
   assert.equal(parsed.options.name, "production");
   assert.equal(parsed.options.access, "read");
   assert.equal(parsed.options.open, false);
   assert.equal(parsed.options.timeout, 300_000);
 
-  await createProgram("test", (command, options, args) => {
-    parsed = { command, options, args };
-  }).parseAsync(
+  await createProgram(
+    "test",
+    commandHandlers({
+      authLogin: (url, options) => {
+        parsed = { url, options };
+      },
+    }),
+  ).parseAsync(
     ["--timeout", "45000", "auth", "login", "https://example.test"],
     { from: "user" },
   );
   assert.equal(parsed.options.timeout, 45_000);
   assert.equal(parsed.options.access, "full");
 
-  const authCommand = createProgram("test", () => {}).commands.find(
+  const authCommand = createProgram("test", commandHandlers()).commands.find(
     (command) => command.name() === "auth",
   );
   const loginCommand = authCommand?.commands.find(

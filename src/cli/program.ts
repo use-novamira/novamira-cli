@@ -16,30 +16,60 @@ export interface GlobalOptions {
   readonly site?: string;
   readonly json: boolean;
   readonly timeout: number;
-  /** True when --timeout was given, so a command default must not override it. */
-  readonly timeoutExplicit: boolean;
   readonly yes: boolean;
   readonly maxOutput: number;
   readonly color: boolean;
   readonly quiet: boolean;
   readonly verbose: boolean;
-  readonly version: boolean;
-  readonly name?: string;
-  readonly access?: "read" | "full";
-  readonly open?: boolean;
-  readonly input?: string;
-  readonly fresh?: boolean;
-  readonly offline?: boolean;
-  readonly fix?: boolean;
-  readonly full?: boolean;
-  readonly check?: boolean;
 }
 
-export type CommandHandler = (
-  command: string,
-  options: GlobalOptions,
-  args: readonly string[],
-) => void | Promise<void>;
+export interface AuthLoginOptions extends GlobalOptions {
+  readonly name?: string;
+  readonly access: "read" | "full";
+  readonly open: boolean;
+}
+
+export interface RunOptions extends GlobalOptions {
+  readonly input?: string;
+  readonly fresh: boolean;
+}
+
+export interface DoctorOptions extends GlobalOptions {
+  readonly offline: boolean;
+  readonly fix: boolean;
+}
+
+export interface GuideGetOptions extends GlobalOptions {
+  readonly full: boolean;
+}
+
+export interface UpdateOptions extends GlobalOptions {
+  readonly check: boolean;
+  /** True when --timeout was given, so the installer should inherit it. */
+  readonly timeoutExplicit: boolean;
+}
+
+export interface CommandHandlers {
+  version(version: string, options: GlobalOptions): void | Promise<void>;
+  authLogin(url: string, options: AuthLoginOptions): void | Promise<void>;
+  authStatus(options: GlobalOptions): void | Promise<void>;
+  authLogout(options: GlobalOptions): void | Promise<void>;
+  sitesList(options: GlobalOptions): void | Promise<void>;
+  sitesRemove(name: string, options: GlobalOptions): void | Promise<void>;
+  discover(options: GlobalOptions): void | Promise<void>;
+  describe(ability: string, options: GlobalOptions): void | Promise<void>;
+  run(ability: string, options: RunOptions): void | Promise<void>;
+  skillGet(slug: string, options: GlobalOptions): void | Promise<void>;
+  upload(
+    localPath: string,
+    remotePath: string,
+    options: GlobalOptions,
+  ): void | Promise<void>;
+  guideList(options: GlobalOptions): void | Promise<void>;
+  guideGet(name: string, options: GuideGetOptions): void | Promise<void>;
+  update(options: UpdateOptions): void | Promise<void>;
+  doctor(options: DoctorOptions): void | Promise<void>;
+}
 
 function positiveInteger(value: string): number {
   const parsed = Number(value);
@@ -51,7 +81,7 @@ function positiveInteger(value: string): number {
 
 export function createProgram(
   version: string,
-  handler: CommandHandler,
+  handlers: CommandHandlers,
 ): Command {
   const program = new Command();
   program
@@ -79,31 +109,38 @@ export function createProgram(
     .option("--verbose", "emit redacted diagnostics", false)
     .option("--version", "print the CLI version", false);
 
-  const invoke =
-    (label: string) =>
-    async (...values: unknown[]): Promise<void> => {
-      const active =
-        values.findLast(
-          (value): value is Command => value instanceof Command,
-        ) ?? program;
-      const args = values.filter(
-        (value): value is string => typeof value === "string",
-      );
-      const explicitTimeout =
-        active.getOptionValueSourceWithGlobals("timeout") !== "default";
-      const parsedOptions = {
-        ...active.optsWithGlobals<GlobalOptions>(),
-        timeoutExplicit: explicitTimeout,
-      };
-      const options =
-        label === "auth login" && !explicitTimeout
-          ? {
-              ...parsedOptions,
-              timeout: DEFAULT_AUTHORIZATION_TIMEOUT_MS,
-            }
-          : parsedOptions;
-      await handler(label, options, args);
+  const optionsFor = (
+    values: readonly unknown[],
+    authorization = false,
+  ): GlobalOptions => {
+    const active =
+      values.findLast((value): value is Command => value instanceof Command) ??
+      program;
+    const explicitTimeout =
+      active.getOptionValueSourceWithGlobals("timeout") !== "default";
+    const parsedOptions = {
+      ...active.optsWithGlobals<GlobalOptions>(),
+      timeoutExplicit: explicitTimeout,
     };
+    const options =
+      authorization && !explicitTimeout
+        ? {
+            ...parsedOptions,
+            timeout: DEFAULT_AUTHORIZATION_TIMEOUT_MS,
+          }
+        : parsedOptions;
+    return options;
+  };
+  const authLoginOptions = (values: readonly unknown[]): AuthLoginOptions =>
+    optionsFor(values, true) as AuthLoginOptions;
+  const runOptions = (values: readonly unknown[]): RunOptions =>
+    optionsFor(values) as RunOptions;
+  const guideGetOptions = (values: readonly unknown[]): GuideGetOptions =>
+    optionsFor(values) as GuideGetOptions;
+  const updateOptions = (values: readonly unknown[]): UpdateOptions =>
+    optionsFor(values) as UpdateOptions;
+  const doctorOptions = (values: readonly unknown[]): DoctorOptions =>
+    optionsFor(values) as DoctorOptions;
 
   const auth = program
     .command("auth")
@@ -117,50 +154,99 @@ export function createProgram(
         .default("full"),
     )
     .option("--no-open", "do not launch a browser")
-    .action(invoke("auth login"));
-  auth.command("status").action(invoke("auth status"));
-  auth.command("logout").action(invoke("auth logout"));
+    .action(async (url: string, ...values: unknown[]) =>
+      handlers.authLogin(url, authLoginOptions(values)),
+    );
+  auth
+    .command("status")
+    .action(async (...values: unknown[]) =>
+      handlers.authStatus(optionsFor(values)),
+    );
+  auth
+    .command("logout")
+    .action(async (...values: unknown[]) =>
+      handlers.authLogout(optionsFor(values)),
+    );
 
   const sites = program.command("sites").description("manage configured sites");
-  sites.command("list").action(invoke("sites list"));
-  sites.command("remove <name>").action(invoke("sites remove"));
+  sites
+    .command("list")
+    .action(async (...values: unknown[]) =>
+      handlers.sitesList(optionsFor(values)),
+    );
+  sites
+    .command("remove <name>")
+    .action(async (name: string, ...values: unknown[]) =>
+      handlers.sitesRemove(name, optionsFor(values)),
+    );
 
-  program.command("discover").action(invoke("discover"));
-  program.command("describe <ability>").action(invoke("describe"));
+  program
+    .command("discover")
+    .action(async (...values: unknown[]) =>
+      handlers.discover(optionsFor(values)),
+    );
+  program
+    .command("describe <ability>")
+    .action(async (ability: string, ...values: unknown[]) =>
+      handlers.describe(ability, optionsFor(values)),
+    );
   program
     .command("run <ability>")
     .option("--input <json|@file|->", "JSON input source")
     .option("--fresh", "bypass cached Ability metadata", false)
-    .action(invoke("run"));
+    .action(async (ability: string, ...values: unknown[]) =>
+      handlers.run(ability, runOptions(values)),
+    );
 
   const skill = program.command("skill").description("load site skills");
-  skill.command("get <slug>").action(invoke("skill get"));
+  skill
+    .command("get <slug>")
+    .action(async (slug: string, ...values: unknown[]) =>
+      handlers.skillGet(slug, optionsFor(values)),
+    );
 
-  program.command("upload <local> <remote>").action(invoke("upload"));
+  program
+    .command("upload <local> <remote>")
+    .action(
+      async (localPath: string, remotePath: string, ...values: unknown[]) =>
+        handlers.upload(localPath, remotePath, optionsFor(values)),
+    );
 
   const guide = program.command("guide").description("read bundled guidance");
-  guide.command("list").action(invoke("guide list"));
+  guide
+    .command("list")
+    .action(async (...values: unknown[]) =>
+      handlers.guideList(optionsFor(values)),
+    );
   guide
     .command("get <name>")
     .option("--full", "include full references", false)
-    .action(invoke("guide get"));
+    .action(async (name: string, ...values: unknown[]) =>
+      handlers.guideGet(name, guideGetOptions(values)),
+    );
 
   program
     .command("update")
     .description("install the latest published CLI release")
     .option("--check", "report the published version without installing", false)
-    .action(invoke("update"));
+    .action(async (...values: unknown[]) =>
+      handlers.update(updateOptions(values)),
+    );
 
   program
     .command("doctor")
     .option("--offline", "forbid network access", false)
     .option("--fix", "apply narrowly safe repairs", false)
-    .action(invoke("doctor"));
+    .action(async (...values: unknown[]) =>
+      handlers.doctor(doctorOptions(values)),
+    );
 
   program.action(async () => {
-    const options = program.opts<GlobalOptions>();
+    const options = program.opts<
+      GlobalOptions & { readonly version: boolean }
+    >();
     if (options.version) {
-      await handler(`version:${version}`, options, []);
+      await handlers.version(version, options);
       return;
     }
     throw new CliError(
