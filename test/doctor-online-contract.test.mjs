@@ -116,7 +116,7 @@ function dependencies(overrides = {}) {
     environment: {},
     now: () => Date.parse("2026-07-21T12:00:00.000Z"),
     metadata: {
-      inspectProtectedResource: async () => resource,
+      probeProtectedResourceUnvalidated: async () => resource,
       authorizationServer: async () => authorization,
     },
     createTokenLifecycle: () => lifecycle,
@@ -175,7 +175,7 @@ test("online failures preserve unreachable, unauthorized, scope, missing, stale,
   const unreachable = dependencies({
     dependencies: {
       metadata: {
-        inspectProtectedResource: async () => {
+        probeProtectedResourceUnvalidated: async () => {
           throw new CliError("network_error", "private network detail");
         },
       },

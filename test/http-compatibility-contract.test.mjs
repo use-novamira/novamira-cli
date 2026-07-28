@@ -350,6 +350,26 @@ test("metadata validation rejects origin attacks and compatibility matrix failur
   assert.equal(requests, 3);
 });
 
+test("unvalidated metadata probing leaves compatibility checks to the doctor", async () => {
+  const incompatibleFixture = {
+    ...protectedFixture,
+    novamira: { ...protectedFixture.novamira, plugin_version: "1.10.0" },
+  };
+  const metadata = new MetadataClient(
+    new HttpClient({
+      fetch: async () => new Response(JSON.stringify(incompatibleFixture)),
+    }),
+  );
+
+  const probed = await metadata.probeProtectedResourceUnvalidated(
+    "https://example.test",
+  );
+  assert.equal(probed.novamira.plugin_version, "1.10.0");
+  await assert.rejects(metadata.protectedResource("https://example.test"), {
+    code: "server_unsupported",
+  });
+});
+
 test("root and subdirectory URLs preserve the WordPress base and encode Ability segments separately", () => {
   assert.equal(
     wellKnownUrl("https://example.test", "oauth-protected-resource"),

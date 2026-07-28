@@ -76,7 +76,9 @@ export function onlineDoctorDefinitions(
   );
   const resource = once(async () => {
     const selected = await requireProbe(profile(), "profile.valid");
-    return dependencies.metadata.inspectProtectedResource(selected.siteUrl);
+    return dependencies.metadata.probeProtectedResourceUnvalidated(
+      selected.siteUrl,
+    );
   });
   const authorization = once(async () => {
     const selected = await requireProbe(profile(), "profile.valid");

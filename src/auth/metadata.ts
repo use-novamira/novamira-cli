@@ -81,7 +81,7 @@ export class MetadataClient {
     return value;
   }
 
-  async inspectProtectedResource(
+  async probeProtectedResourceUnvalidated(
     site: string,
   ): Promise<ProtectedResourceMetadata> {
     const base = siteUrl(site);
