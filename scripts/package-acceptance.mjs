@@ -115,24 +115,28 @@ try {
     process.platform === "win32" ? "novamira.cmd" : "novamira",
   );
   verifyInstalledCommands(localBin, join(temporary, "local-home"));
-  run(
-    process.execPath,
-    [
-      "--test",
-      "test/security-acceptance.test.mjs",
-      "test/doctor-online-contract.test.mjs",
-    ],
-    root,
-    {
-      NOVAMIRA_ACCEPTANCE_DIST: join(
-        localRoot,
-        "node_modules",
-        "@novamira",
-        "cli",
-        "dist",
-      ),
-    },
-  );
+  // These contract tests construct UnixFileSecurity directly, so they verify
+  // POSIX modes the platform cannot set and fail closed on Windows. Windows
+  // therefore covers packaging and the installed CLI only.
+  if (process.platform !== "win32")
+    run(
+      process.execPath,
+      [
+        "--test",
+        "test/security-acceptance.test.mjs",
+        "test/doctor-online-contract.test.mjs",
+      ],
+      root,
+      {
+        NOVAMIRA_ACCEPTANCE_DIST: join(
+          localRoot,
+          "node_modules",
+          "@novamira",
+          "cli",
+          "dist",
+        ),
+      },
+    );
 
   const globalRoot = join(temporary, "global");
   run(
