@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
     steps:
@@ -31,4 +31,28 @@ jobs:
       - run: npm config set ignore-scripts true
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run check
+      - run: bun run package:acceptance
+
+  # The contract tests hardcode UnixFileSecurity and assert POSIX modes, so they
+  # cannot run on Windows; the Windows ACL path in src/config/file-security.ts is
+  # therefore not covered here. Windows keeps packaging acceptance only.
+  package-windows:
+    name: windows-latest / Node ${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.19
+      - run: npm config set ignore-scripts true
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run lint
+      - run: bun run format:check
       - run: bun run package:acceptance
