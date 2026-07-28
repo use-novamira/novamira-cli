@@ -7,21 +7,17 @@ import { normalizeSiteUrl } from "../config/site-url.js";
 export type WellKnownDocument =
   "oauth-protected-resource" | "oauth-authorization-server";
 
-export function siteUrl(value: string): string {
-  return normalizeSiteUrl(value).siteUrl;
-}
-
 export function wellKnownUrl(
   site: string,
   document: WellKnownDocument,
 ): string {
-  return appendPath(siteUrl(site), [".well-known", document]);
+  return appendPath(normalizeSiteUrl(site).siteUrl, [".well-known", document]);
 }
 
 export function restUrl(site: string, segments: readonly string[]): string {
   if (segments.length === 0 || segments.some((segment) => segment === ""))
     throw new CliError("usage_error", "A REST path must not be empty.");
-  return appendPath(siteUrl(site), ["wp-json", ...segments]);
+  return appendPath(normalizeSiteUrl(site).siteUrl, ["wp-json", ...segments]);
 }
 
 export function restUrlFromResource(
@@ -96,7 +92,8 @@ function appendPath(base: string, segments: readonly string[]): string {
 function plainRestUrl(site: string, segments: readonly string[]): string {
   if (segments.length === 0 || segments.some((segment) => segment === ""))
     throw new CliError("usage_error", "A REST path must not be empty.");
-  const url = new URL(`${siteUrl(site).replace(/\/$/, "")}/index.php`);
+  const base = normalizeSiteUrl(site).siteUrl;
+  const url = new URL(`${base.replace(/\/$/, "")}/index.php`);
   url.searchParams.set("rest_route", `/${segments.join("/")}`);
   return url.toString();
 }

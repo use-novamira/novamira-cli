@@ -1,15 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { normalizeSiteUrl } from "../config/site-url.js";
 import { CliError } from "../errors.js";
-import { compareSemver } from "../semver.js";
 import type { HttpClient } from "../rest/http-client.js";
 import {
   restUrlFromResource,
   sameOriginEndpoint,
-  siteUrl,
   wellKnownUrl,
 } from "../rest/urls.js";
+import { compareSemver } from "../semver.js";
 
 export const COMPATIBILITY_CACHE_TTL_MS = 5 * 60 * 1000;
 export const MINIMUM_NOVAMIRA_VERSION = "1.11.0";
@@ -65,7 +65,7 @@ export class MetadataClient {
   ) {}
 
   async protectedResource(site: string): Promise<ProtectedResourceMetadata> {
-    const base = siteUrl(site);
+    const base = normalizeSiteUrl(site).siteUrl;
     const cached = this.protectedCache.get(base);
     if (cached !== undefined && cached.expiresAt > this.now())
       return cached.value;
@@ -84,7 +84,7 @@ export class MetadataClient {
   async probeProtectedResourceUnvalidated(
     site: string,
   ): Promise<ProtectedResourceMetadata> {
-    const base = siteUrl(site);
+    const base = normalizeSiteUrl(site).siteUrl;
     const raw = await this.metadataRequest(
       wellKnownUrl(base, "oauth-protected-resource"),
     );
@@ -95,7 +95,7 @@ export class MetadataClient {
     site: string,
     protectedMetadata?: ProtectedResourceMetadata,
   ): Promise<AuthorizationServerMetadata> {
-    const base = siteUrl(site);
+    const base = normalizeSiteUrl(site).siteUrl;
     const resource = protectedMetadata ?? (await this.protectedResource(base));
     const issuer = resource.authorization_servers[0];
     if (issuer === undefined)
@@ -108,7 +108,7 @@ export class MetadataClient {
 
   clear(site?: string): void {
     if (site === undefined) this.protectedCache.clear();
-    else this.protectedCache.delete(siteUrl(site));
+    else this.protectedCache.delete(normalizeSiteUrl(site).siteUrl);
   }
 
   private async metadataRequest(url: string): Promise<unknown> {
@@ -127,8 +127,7 @@ export function validateProtectedResourceMetadata(
   site: string,
 ): ProtectedResourceMetadata {
   const object = record(value, "Protected-resource metadata");
-  const base = siteUrl(site);
-  const origin = new URL(base).origin;
+  const { siteUrl: base, origin } = normalizeSiteUrl(site);
   const resource = endpointString(object.resource, origin, "OAuth resource");
   restUrlFromResource(base, resource, ["mcp", "novamira-oauth"]);
   const authorizationServers = stringArray(
@@ -137,7 +136,9 @@ export function validateProtectedResourceMetadata(
   );
   let authorizationServer: string;
   try {
-    authorizationServer = siteUrl(authorizationServers[0] ?? "");
+    authorizationServer = normalizeSiteUrl(
+      authorizationServers[0] ?? "",
+    ).siteUrl;
   } catch (cause) {
     throw unsupported(
       "Authorization server must match this WordPress site.",
@@ -169,8 +170,7 @@ export function validateAuthorizationServerMetadata(
   site: string,
 ): AuthorizationServerMetadata {
   const object = record(value, "Authorization-server metadata");
-  const base = siteUrl(site);
-  const origin = new URL(base).origin;
+  const { siteUrl: base, origin } = normalizeSiteUrl(site);
   const issuer = endpointString(object.issuer, origin, "issuer").replace(
     /\/$/,
     "",

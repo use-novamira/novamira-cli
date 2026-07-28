@@ -6,12 +6,13 @@ import { createHash } from "node:crypto";
 import { stderr } from "node:process";
 import { CliError } from "../errors.js";
 import type { AbilityMetadataCache } from "../cache/ability-cache.js";
+import type { ProfileLockManager } from "../config/lock.js";
 import {
   validateProfileName,
   type ProfileStore,
   type SiteProfile,
 } from "../config/profiles.js";
-import type { ProfileLockManager } from "../config/lock.js";
+import { normalizeSiteUrl } from "../config/site-url.js";
 import type { CredentialRecord, CredentialStore } from "./credentials.js";
 import type {
   AuthorizationServerMetadata,
@@ -22,7 +23,6 @@ import { createPkce } from "./pkce.js";
 import { LoopbackCallbackFactory, type CallbackFactory } from "./loopback.js";
 import type { HttpClient } from "../rest/http-client.js";
 import { verifyLoginSurface } from "../rest/login-verification.js";
-import { siteUrl as normalizeSite } from "../rest/urls.js";
 
 export type LoginAccess = "read" | "full";
 
@@ -79,8 +79,9 @@ export class LoginService {
   async login(options: LoginOptions): Promise<LoginResult> {
     if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs <= 0)
       throw new CliError("usage_error", "Login timeout must be positive.");
-    const normalizedSite = normalizeSite(options.siteUrl);
-    const origin = new URL(normalizedSite).origin;
+    const { siteUrl: normalizedSite, origin } = normalizeSiteUrl(
+      options.siteUrl,
+    );
     const profileName = validateProfileName(
       options.name ?? defaultProfileName(normalizedSite),
     );
@@ -190,6 +191,7 @@ export class LoginService {
         const profile = await this.commitLogin(
           profileName,
           normalizedSite,
+          origin,
           clientId,
           protectedMetadata,
           credential,
@@ -276,11 +278,11 @@ export class LoginService {
   private async commitLogin(
     profileName: string,
     site: string,
+    origin: string,
     clientId: string,
     metadata: ProtectedResourceMetadata,
     credential: CredentialRecord,
   ): Promise<SiteProfile> {
-    const origin = new URL(site).origin;
     const target = { profileName, origin };
     return this.locks.withLock(profileName, async () => {
       const previous = await this.profiles.get(profileName);

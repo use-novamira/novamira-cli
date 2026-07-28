@@ -32,3 +32,8 @@ protocol-session or JSON-RPC API. Production handler tests beneath the plugin
 harness use real signed tokens and OAuth grant lifecycles; the CLI acceptance
 test uses the production profile, credential, metadata, login, token lifecycle,
 Ability, cache, and site-skill components.
+
+Stored profiles are normalized when written and structurally validated when
+loaded. Loading local state permits previously stored development HTTP URLs,
+but every REST URL construction revalidates the site URL under the current
+invocation's HTTPS policy before any network request.
