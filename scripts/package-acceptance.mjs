@@ -186,16 +186,30 @@ function verifyInstalledCommands(command, home) {
   assert.equal(doctor.data.version, 1);
 }
 
+// Node refuses to spawn a .cmd shim without a shell, so Windows needs one. With
+// a shell it passes the arguments verbatim, which makes quoting ours to do.
+function quote(argument) {
+  return /[\s"&()<>^|]/.test(argument)
+    ? `"${argument.replaceAll('"', '""')}"`
+    : argument;
+}
+
 function run(command, args, cwd, environment = {}) {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    env: { ...cleanEnvironment, ...environment },
-  });
+  const shell = process.platform === "win32";
+  const result = spawnSync(
+    shell ? quote(command) : command,
+    shell ? args.map(quote) : args,
+    {
+      cwd,
+      encoding: "utf8",
+      shell,
+      env: { ...cleanEnvironment, ...environment },
+    },
+  );
   assert.equal(
     result.status,
     0,
-    `${command} ${args.join(" ")} failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
+    `${command} ${args.join(" ")} failed\nerror: ${result.error?.message ?? "none"}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
   );
   return result;
 }
