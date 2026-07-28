@@ -3,7 +3,7 @@
 
 import { readFile } from "node:fs/promises";
 import { CliError } from "../errors.js";
-import { HTTP_RESPONSE_CEILING_BYTES } from "../output/artifacts.js";
+import { HTTP_RESPONSE_CEILING_BYTES } from "../limits.js";
 
 export interface InputReader {
   readonly file?: (path: string) => Promise<Buffer>;

@@ -8,11 +8,11 @@ import { atomicWriteFile } from "../config/atomic-write.js";
 import type { VerifiedFileSecurity } from "../config/file-security.js";
 import type { ProfileLockManager } from "../config/lock.js";
 import { CliError } from "../errors.js";
+import { assertHttpResponseSize } from "../limits.js";
 
 export const DEFAULT_OUTPUT_BUDGET_BYTES = 1024 * 1024;
 export const MAX_OUTPUT_BUDGET_BYTES = 10 * 1024 * 1024;
 export const ARTIFACT_PREVIEW_BUDGET_BYTES = 64 * 1024;
-export const HTTP_RESPONSE_CEILING_BYTES = 25 * 1024 * 1024;
 export const ARTIFACT_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const ARTIFACT_TOTAL_BUDGET_BYTES = 100 * 1024 * 1024;
 
@@ -84,19 +84,6 @@ function validJsonPreview(serialized: string, budget: number): unknown {
     }
   }
   return best;
-}
-
-export function assertHttpResponseSize(byteLength: number): void {
-  if (
-    !Number.isSafeInteger(byteLength) ||
-    byteLength < 0 ||
-    byteLength > HTTP_RESPONSE_CEILING_BYTES
-  ) {
-    throw new CliError(
-      "network_error",
-      "The HTTP response exceeded the 25 MiB safety limit.",
-    );
-  }
 }
 
 export class ArtifactStore {

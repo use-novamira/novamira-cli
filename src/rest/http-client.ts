@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { CliError } from "../errors.js";
-import { redact } from "../output/redact.js";
 import {
   HTTP_RESPONSE_CEILING_BYTES,
   assertHttpResponseSize,
-} from "../output/artifacts.js";
+} from "../limits.js";
+import { redact } from "../output/redact.js";
 import { parseOAuthResponse } from "./oauth-response.js";
 import { parseWordPressResponse } from "./wordpress-response.js";
 

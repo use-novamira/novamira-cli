@@ -16,10 +16,10 @@ import { UnixFileSecurity } from "../dist/config/file-security.js";
 import { ProfileLockManager } from "../dist/config/lock.js";
 import { platformPaths } from "../dist/config/paths.js";
 import {
-  ArtifactStore,
   HTTP_RESPONSE_CEILING_BYTES,
   assertHttpResponseSize,
-} from "../dist/output/artifacts.js";
+} from "../dist/limits.js";
+import { ArtifactStore } from "../dist/output/artifacts.js";
 import { redact } from "../dist/output/redact.js";
 import { isCredentialClassifiedResult } from "../dist/security/classify.js";
 
