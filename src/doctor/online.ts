@@ -163,7 +163,7 @@ export function onlineDoctorDefinitions(
   });
 
   return [
-    ...local.slice(0, 5),
+    ...local.filter(({ id }) => id !== "oauth.token"),
     {
       id: "oauth.resource_metadata",
       run: () =>
