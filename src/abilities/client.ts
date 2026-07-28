@@ -10,12 +10,11 @@ import {
 import type { AbilityMetadataCache } from "../cache/ability-cache.js";
 import type { SiteProfile } from "../config/profiles.js";
 import { CliError } from "../errors.js";
-import type { JsonResponse } from "../rest/http-client.js";
 import { restUrl, restUrlFromResource } from "../rest/urls.js";
+import { WordPressPaginator } from "./paginator.js";
 import { diagnoseSchema, type SchemaFinding } from "./schema.js";
 
-export const ABILITY_PAGE_SIZE = 100;
-export const MAX_ABILITY_PAGES = 1_000;
+export { ABILITY_PAGE_SIZE, MAX_ABILITY_PAGES } from "./paginator.js";
 
 export type AbilityRecord = Readonly<Record<string, unknown>>;
 
@@ -195,149 +194,31 @@ export class AbilityClient {
       this.profile.siteUrl,
       await this.metadata.protectedResource(this.profile.siteUrl),
     );
-    const records: AbilityRecord[] = [];
-    const names = new Set<string>();
-    let expectedTotal: number | undefined;
-    let pagination: "total" | "link" | undefined;
-
-    for (let page = 1; page <= MAX_ABILITY_PAGES; page += 1) {
-      const response = await this.abilityPage(page, resource);
-      if (!Array.isArray(response.data))
-        throw unsupported("The WordPress Ability list is invalid.");
-      const pageRecords = response.data.map((value) =>
+    const endpoint = new URL(
+      restUrlFromResource(this.profile.siteUrl, resource, [
+        "wp-abilities",
+        "v1",
+        "abilities",
+      ]),
+    );
+    return new WordPressPaginator<AbilityRecord & { readonly name: string }>({
+      endpoint,
+      expectedOrigin: this.profile.origin,
+      fetchPage: async (url) =>
+        this.tokens.authenticatedJsonResponse(
+          {
+            url,
+            expectedOrigin: this.profile.origin,
+            timeoutMs: this.timeoutMs,
+          },
+          { unauthorizedReplay: "known-not-accepted" },
+        ),
+      parseRecord: (value) =>
         abilityRecord(
           value,
           "The WordPress Ability list contains an invalid record.",
-        ),
-      );
-      for (const record of pageRecords) {
-        const name = record.name as string;
-        if (names.has(name))
-          throw unsupported(
-            "The WordPress Ability catalog changed during discovery.",
-          );
-        names.add(name);
-        records.push(record);
-      }
-
-      const total = totalPages(response.headers.get("x-wp-totalpages"));
-      const linkHeader = response.headers.get("link");
-      pagination ??=
-        total === undefined
-          ? linkHeader === null
-            ? undefined
-            : "link"
-          : "total";
-      if (pagination === undefined)
-        throw unsupported(
-          "The WordPress Ability list lacks pagination metadata.",
-        );
-      if (pagination === "total" && total === undefined)
-        throw unsupported(
-          "The WordPress Ability page count changed during discovery.",
-        );
-      if (pagination === "link" && total !== undefined)
-        throw unsupported(
-          "The WordPress Ability pagination method changed during discovery.",
-        );
-      if (total !== undefined) {
-        if (expectedTotal !== undefined && total !== expectedTotal)
-          throw unsupported(
-            "The WordPress Ability page count changed during discovery.",
-          );
-        expectedTotal = total;
-        if (total > MAX_ABILITY_PAGES)
-          throw unsupported(
-            "The WordPress Ability catalog exceeds the page safety limit.",
-          );
-        if (total === 0 && (page !== 1 || pageRecords.length !== 0))
-          throw unsupported(
-            "The WordPress Ability page count is inconsistent.",
-          );
-        if (total > 0 && page > total)
-          throw unsupported(
-            "The WordPress Ability page count is inconsistent.",
-          );
-      }
-
-      const next = linkHeader === null ? undefined : nextLink(linkHeader);
-      if (next !== undefined) {
-        this.assertNextPage(next, page + 1, resource);
-      }
-      if (
-        expectedTotal !== undefined &&
-        next !== undefined &&
-        page >= expectedTotal
-      )
-        throw unsupported("Ability pagination metadata is inconsistent.");
-
-      if (expectedTotal !== undefined) {
-        if (expectedTotal === 0 || page === expectedTotal) return records;
-        continue;
-      }
-      if (next !== undefined) continue;
-      return records;
-    }
-    throw unsupported(
-      "The WordPress Ability catalog exceeds the page safety limit.",
-    );
-  }
-
-  private async abilityPage(
-    page: number,
-    resource: string,
-  ): Promise<JsonResponse<unknown>> {
-    const url = new URL(
-      restUrlFromResource(this.profile.siteUrl, resource, [
-        "wp-abilities",
-        "v1",
-        "abilities",
-      ]),
-    );
-    url.searchParams.set("per_page", String(ABILITY_PAGE_SIZE));
-    url.searchParams.set("page", String(page));
-    return this.tokens.authenticatedJsonResponse(
-      {
-        url,
-        expectedOrigin: this.profile.origin,
-        timeoutMs: this.timeoutMs,
-      },
-      { unauthorizedReplay: "known-not-accepted" },
-    );
-  }
-
-  private assertNextPage(
-    value: string,
-    expectedPage: number,
-    resource: string,
-  ): void {
-    let url: URL;
-    try {
-      url = new URL(value);
-    } catch {
-      throw unsupported("Ability pagination contains an invalid next link.");
-    }
-    const expected = new URL(
-      restUrlFromResource(this.profile.siteUrl, resource, [
-        "wp-abilities",
-        "v1",
-        "abilities",
-      ]),
-    );
-    if (
-      url.origin !== this.profile.origin ||
-      url.pathname !== expected.pathname ||
-      url.username !== "" ||
-      url.password !== "" ||
-      url.hash !== "" ||
-      url.searchParams.get("rest_route") !==
-        expected.searchParams.get("rest_route") ||
-      url.searchParams.get("page") !== String(expectedPage) ||
-      url.searchParams.get("per_page") !== String(ABILITY_PAGE_SIZE)
-    )
-      throw unsupported(
-        "Ability pagination contains an unsafe or looping next link.",
-      );
+        ) as AbilityRecord & { readonly name: string },
+    }).collect();
   }
 
   async agentContext(
@@ -455,37 +336,6 @@ function compactAbility(record: AbilityRecord): CompactAbility {
     if (Object.keys(annotations).length > 0) compact.annotations = annotations;
   }
   return compact;
-}
-
-function totalPages(value: string | null): number | undefined {
-  if (value === null) return undefined;
-  if (!/^(0|[1-9]\d*)$/.test(value))
-    throw unsupported("The WordPress Ability page count is invalid.");
-  const total = Number(value);
-  if (!Number.isSafeInteger(total))
-    throw unsupported("The WordPress Ability page count is invalid.");
-  return total;
-}
-
-function nextLink(value: string): string | undefined {
-  if (value.trim() === "")
-    throw unsupported("Ability pagination Link metadata is invalid.");
-  let next: string | undefined;
-  for (const part of value.split(/,(?=\s*<)/)) {
-    const match = /^\s*<([^>]+)>\s*((?:;\s*[^;]+)*)\s*$/.exec(part);
-    if (match === null)
-      throw unsupported("Ability pagination Link metadata is invalid.");
-    const parameters = match[2] ?? "";
-    const relation = /(?:^|;)\s*rel\s*=\s*(?:"([^"]*)"|([^;\s]+))/i.exec(
-      parameters,
-    );
-    const relations = (relation?.[1] ?? relation?.[2] ?? "").split(/\s+/);
-    if (!relations.includes("next")) continue;
-    if (next !== undefined)
-      throw unsupported("Ability pagination contains multiple next links.");
-    next = match[1];
-  }
-  return next;
 }
 
 function object(value: unknown, message: string): AbilityRecord {
