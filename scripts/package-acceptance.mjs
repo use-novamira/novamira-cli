@@ -83,10 +83,17 @@ try {
       manifest.files.some(({ path }) => path === required),
       `missing ${required}`,
     );
-  const executable = manifest.files.find(
-    ({ path }) => path === "dist/index.js",
-  );
-  assert.ok((executable.mode & 0o111) !== 0, "dist/index.js is not executable");
+  // Windows has no execute bit to record, so a tarball packed there never
+  // carries one. Released tarballs are packed on Linux, where this holds.
+  if (process.platform !== "win32") {
+    const executable = manifest.files.find(
+      ({ path }) => path === "dist/index.js",
+    );
+    assert.ok(
+      (executable.mode & 0o111) !== 0,
+      "dist/index.js is not executable",
+    );
+  }
   assert.ok(
     (await readFile(join(root, "dist/index.js"), "utf8")).startsWith(
       "#!/usr/bin/env node\n",
