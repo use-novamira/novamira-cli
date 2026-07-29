@@ -45,7 +45,7 @@ const reportingRunner = {
     if (result.status !== 0 && result.status !== 3)
       process.stderr.write(
         `${command} exited with ${String(result.status)}\n` +
-          `script: ${args[3]}\n` +
+          `script: ${args[5]}\n` +
           `stdout: ${result.stdout}\nstderr: ${result.stderr}\n`,
       );
     return result.status;

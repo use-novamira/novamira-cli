@@ -231,6 +231,8 @@ Fallback files are `credentials/v1/<account>.json`, written under the profile lo
 5. Apply with `Set-Acl -LiteralPath` and re-read with `Get-Acl`.
 6. Accept only a protected ACL whose owner is the current SID and whose explicit/inherited allow or deny rules mention no other SID. Reject unverifiable ACLs and remove an unsafe temporary file.
 
+Every `powershell.exe` invocation passes the same prefix, `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`, so the call sites cannot drift apart. The policy override is process-scoped hardening rather than a fix for any observed failure: the command is always inline text this CLI generates, never a script file on disk, so a machine or user policy governing script execution should not be able to change how it runs.
+
 The Phase 0 prototype uses this locale-independent core. `powershell.exe` populates `$args` only under `-File`; under `-Command` trailing values are appended to the command text and executed, so the implementation inlines the path as a single-quoted literal with embedded quotes doubled, and rejects any path containing a double quote or newline. The script never propagates its result through an exception: it exits `0` when the ACL is safe, `3` when the ACL is unsafe, and `1` on any other failure, so an unsafe ACL is reported as an unsafe path rather than an internal error.
 
 ```powershell

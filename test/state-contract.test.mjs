@@ -242,23 +242,25 @@ test("locks coordinate independent managers, stale owners recover, and failed at
     assert.equal(calls[0][0], "powershell.exe");
     for (const [, args] of calls) {
       // `$args` never binds under `-Command`; every input must be inlined.
-      assert.deepEqual(args.slice(0, 3), [
+      assert.deepEqual(args.slice(0, 5), [
         "-NoProfile",
         "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
         "-Command",
       ]);
-      assert.equal(args.length, 4);
-      assert.ok(!args[3].includes("$args["));
+      assert.equal(args.length, 6);
+      assert.ok(!args[5].includes("$args["));
     }
     assert.deepEqual(
-      calls.map(([, args]) => /\$action='([a-z]+)'/.exec(args[3])[1]),
+      calls.map(([, args]) => /\$action='([a-z]+)'/.exec(args[5])[1]),
       ["apply", "apply", "verify", "verify"],
     );
     assert.deepEqual(
-      calls.map(([, args]) => /\$directory=\$([a-z]+)/.exec(args[3])[1]),
+      calls.map(([, args]) => /\$directory=\$([a-z]+)/.exec(args[5])[1]),
       ["true", "false", "true", "false"],
     );
-    assert.ok(calls[0][1][3].includes("$path='C:\\State'"));
+    assert.ok(calls[0][1][5].includes("$path='C:\\State'"));
 
     const unsafe = new WindowsFileSecurity({ run: async () => 3 });
     assert.equal(await unsafe.verifyDirectory("C:\\State"), false);
@@ -274,7 +276,7 @@ test("locks coordinate independent managers, stale owners recover, and failed at
     const quoted = [];
     const escaping = new WindowsFileSecurity({
       run: async (_command, args) => {
-        quoted.push(args[3]);
+        quoted.push(args[5]);
         return 0;
       },
     });

@@ -4,7 +4,7 @@
 import { chmod, mkdir, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 
-import { powerShellLiteral } from "./powershell.js";
+import { POWERSHELL_PREFIX, powerShellLiteral } from "./powershell.js";
 
 export interface FileSecurity {
   secureDirectory(path: string): Promise<void>;
@@ -130,7 +130,7 @@ export class WindowsFileSecurity implements VerifiedFileSecurity {
       `try{${body}}catch{[Console]::Error.WriteLine($_.Exception.Message);$code=1}`,
       "exit $code",
     ].join(";");
-    return ["-NoProfile", "-NonInteractive", "-Command", script];
+    return [...POWERSHELL_PREFIX, script];
   }
 }
 

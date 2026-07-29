@@ -12,6 +12,7 @@ import {
   type ProfileStore,
   type SiteProfile,
 } from "../config/profiles.js";
+import { POWERSHELL_PREFIX } from "../config/powershell.js";
 import {
   normalizeSiteUrl,
   type SiteUrlEnvironment,
@@ -379,9 +380,7 @@ export function browserCommand(
     return {
       file: "powershell.exe",
       args: [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
+        ...POWERSHELL_PREFIX,
         "Start-Process -FilePath $env:NOVAMIRA_BROWSER_URL",
       ],
       environment: { NOVAMIRA_BROWSER_URL: url },

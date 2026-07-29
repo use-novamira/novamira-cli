@@ -271,17 +271,19 @@ test("the Windows credential backend inlines its inputs instead of relying on $a
     const executor = {
       execute: async (command, args, stdin = "") => {
         assert.equal(command, "powershell.exe");
-        assert.deepEqual(args.slice(0, 3), [
+        assert.deepEqual(args.slice(0, 5), [
           "-NoProfile",
           "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
           "-Command",
         ]);
         assert.equal(
           args.length,
-          4,
+          6,
           "trailing values are appended to the command text, not bound to $args",
         );
-        const script = args[3];
+        const script = args[5];
         if (script === "$PSVersionTable.PSVersion.ToString()")
           return { code: 0, stdout: "5.1\n" };
         assert.doesNotMatch(script, /\$args\[/);

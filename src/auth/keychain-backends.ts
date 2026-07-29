@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { powerShellLiteral } from "../config/powershell.js";
+import { POWERSHELL_PREFIX, powerShellLiteral } from "../config/powershell.js";
 import { CliError } from "../errors.js";
 import {
   BackendUnavailableError,
@@ -196,9 +196,7 @@ export class WindowsCredentialManagerBackend extends CommandCredentialBackend {
       return (
         (
           await this.executor.execute("powershell.exe", [
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
+            ...POWERSHELL_PREFIX,
             "$PSVersionTable.PSVersion.ToString()",
           ])
         ).code === 0
@@ -246,9 +244,7 @@ export class WindowsCredentialManagerBackend extends CommandCredentialBackend {
     return this.executor.execute(
       "powershell.exe",
       [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
+        ...POWERSHELL_PREFIX,
         `$env:NOVAMIRA_CREDENTIAL_SOURCE=@'\n${WINDOWS_CREDENTIAL_SCRIPT}\n'@;${command}`,
       ],
       stdin,

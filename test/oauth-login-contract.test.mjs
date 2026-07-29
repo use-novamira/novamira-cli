@@ -544,6 +544,8 @@ test("the browser command never puts the authorization URL in executable text", 
   assert.deepEqual(windows.args, [
     "-NoProfile",
     "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
     "-Command",
     "Start-Process -FilePath $env:NOVAMIRA_BROWSER_URL",
   ]);
