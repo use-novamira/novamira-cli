@@ -25,6 +25,9 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const { WindowsFileSecurity, secureDirectory } = await import(
   new URL("../dist/config/file-security.js", import.meta.url).href
 );
+const { powerShellEnvironment } = await import(
+  new URL("../dist/config/powershell.js", import.meta.url).href
+);
 
 // The storage root carries a space and a single quote: the two characters that
 // break an unquoted or naively quoted script literal.
@@ -37,15 +40,19 @@ const file = join(state, "credentials.json");
 // explanation. This one reports what powershell.exe actually said.
 const reportingRunner = {
   run: async (command, args) => {
+    // Must match the production runner's environment, or this script would
+    // pass or fail for reasons the CLI itself never sees.
     const result = spawnSync(command, args, {
       encoding: "utf8",
       windowsHide: true,
+      env: powerShellEnvironment(),
     });
     if (result.error) throw result.error;
     if (result.status !== 0 && result.status !== 3)
       process.stderr.write(
         `${command} exited with ${String(result.status)}\n` +
           `script: ${args[5]}\n` +
+          `inherited PSModulePath: ${process.env.PSModulePath ?? "(unset)"}\n` +
           `stdout: ${result.stdout}\nstderr: ${result.stderr}\n`,
       );
     return result.status;

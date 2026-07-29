@@ -14,6 +14,20 @@ export const POWERSHELL_PREFIX = [
   "-Command",
 ] as const;
 
+// PowerShell 7 exports a `PSModulePath` that points at its own module tree. A
+// `powershell.exe` (5.1) child that inherits it resolves the inbox modules to
+// the PowerShell 7 builds and cannot load them, so `Get-Acl`, `Add-Type`, and
+// `Start-Process` all fail with "the module could not be loaded". Dropping the
+// variable makes Windows PowerShell rebuild its own default path. This matters
+// whenever the CLI is launched from a PowerShell 7 session, not only in CI.
+export function powerShellEnvironment(
+  base: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const environment = { ...base };
+  delete environment.PSModulePath;
+  return environment;
+}
+
 // `$args` is only populated when powershell.exe is invoked with `-File`. Under
 // `-Command` any trailing values are appended to the command text and executed
 // as commands, so every input must be inlined as a quoted literal instead.

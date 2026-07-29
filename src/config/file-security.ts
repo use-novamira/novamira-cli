@@ -4,7 +4,11 @@
 import { chmod, mkdir, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 
-import { POWERSHELL_PREFIX, powerShellLiteral } from "./powershell.js";
+import {
+  POWERSHELL_PREFIX,
+  powerShellEnvironment,
+  powerShellLiteral,
+} from "./powershell.js";
 
 export interface FileSecurity {
   secureDirectory(path: string): Promise<void>;
@@ -51,6 +55,7 @@ export class SpawnCommandRunner implements CommandRunner {
       const child = spawn(command, [...args], {
         stdio: "ignore",
         windowsHide: true,
+        env: powerShellEnvironment(),
       });
       child.once("error", reject);
       child.once("exit", (code, signal) => {

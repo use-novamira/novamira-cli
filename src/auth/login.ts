@@ -12,7 +12,10 @@ import {
   type ProfileStore,
   type SiteProfile,
 } from "../config/profiles.js";
-import { POWERSHELL_PREFIX } from "../config/powershell.js";
+import {
+  POWERSHELL_PREFIX,
+  powerShellEnvironment,
+} from "../config/powershell.js";
 import {
   normalizeSiteUrl,
   type SiteUrlEnvironment,
@@ -396,7 +399,7 @@ export class SystemBrowserLauncher implements BrowserLauncher {
         detached: true,
         stdio: "ignore",
         windowsHide: true,
-        env: { ...process.env, ...command.environment },
+        env: { ...powerShellEnvironment(), ...command.environment },
       });
       child.once("error", reject);
       child.once("spawn", () => {

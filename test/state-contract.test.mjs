@@ -12,6 +12,7 @@ import {
   UnixFileSecurity,
   WindowsFileSecurity,
 } from "../dist/config/file-security.js";
+import { powerShellEnvironment } from "../dist/config/powershell.js";
 import { ProfileLockManager } from "../dist/config/lock.js";
 import { platformPaths } from "../dist/config/paths.js";
 import { ProfileStore } from "../dist/config/profiles.js";
@@ -270,6 +271,15 @@ test("locks coordinate independent managers, stale owners recover, and failed at
     const broken = new WindowsFileSecurity({ run: async () => 1 });
     await assert.rejects(broken.verifyFile("C:\\State\\config.json"));
     await assert.rejects(broken.secureFile("C:\\State\\config.json"));
+
+    // PowerShell 7 exports its own module tree; a powershell.exe 5.1 child that
+    // inherits it cannot load the inbox modules Get-Acl lives in.
+    const sanitized = powerShellEnvironment({
+      PATH: "/usr/bin",
+      PSModulePath: "C:\\Program Files\\PowerShell\\7\\Modules",
+    });
+    assert.equal(sanitized.PSModulePath, undefined);
+    assert.equal(sanitized.PATH, "/usr/bin");
 
     const quoting = new WindowsFileSecurity({ run: async () => 0 });
     await assert.rejects(quoting.secureFile('C:\\State\\a"b.json'));

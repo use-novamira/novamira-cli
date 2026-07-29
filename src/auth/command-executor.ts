@@ -13,6 +13,7 @@ export interface CommandExecutor {
     command: string,
     args: readonly string[],
     stdin?: string,
+    environment?: NodeJS.ProcessEnv,
   ): Promise<CommandResult>;
 }
 
@@ -30,12 +31,14 @@ export class SpawnCommandExecutor implements CommandExecutor {
     command: string,
     args: readonly string[],
     stdin = "",
+    environment?: NodeJS.ProcessEnv,
   ): Promise<CommandResult> {
     return new Promise((resolve, reject) => {
       const child = spawn(command, [...args], {
         shell: false,
         windowsHide: true,
         stdio: ["pipe", "pipe", "ignore"],
+        ...(environment === undefined ? {} : { env: environment }),
       });
       const chunks: Buffer[] = [];
       let size = 0;
