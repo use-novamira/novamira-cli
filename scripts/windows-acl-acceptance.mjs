@@ -33,8 +33,27 @@ const state = join(home, "state");
 const locks = join(state, "locks");
 const file = join(state, "credentials.json");
 
+// The production runner discards output, which leaves a failing script with no
+// explanation. This one reports what powershell.exe actually said.
+const reportingRunner = {
+  run: async (command, args) => {
+    const result = spawnSync(command, args, {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0 && result.status !== 3)
+      process.stderr.write(
+        `${command} exited with ${String(result.status)}\n` +
+          `script: ${args[3]}\n` +
+          `stdout: ${result.stdout}\nstderr: ${result.stderr}\n`,
+      );
+    return result.status;
+  },
+};
+
 try {
-  const security = new WindowsFileSecurity();
+  const security = new WindowsFileSecurity(reportingRunner);
 
   // An inherited ACL must read as unsafe. While the script relied on $args it
   // errored for every path, so a false here also proves Get-Acl was reached.

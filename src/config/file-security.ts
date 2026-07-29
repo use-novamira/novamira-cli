@@ -125,7 +125,9 @@ export class WindowsFileSecurity implements VerifiedFileSecurity {
       `$directory=$${String(directory)}`,
       `$action=${powerShellLiteral(action)}`,
       "$code=0",
-      `try{${body}}catch{$code=1}`,
+      // The runner discards the child's output, so this reaches nobody in
+      // normal use; it exists for the Windows acceptance script.
+      `try{${body}}catch{[Console]::Error.WriteLine($_.Exception.Message);$code=1}`,
       "exit $code",
     ].join(";");
     return ["-NoProfile", "-NonInteractive", "-Command", script];
