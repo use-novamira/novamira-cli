@@ -122,7 +122,13 @@ export class WindowsFileSecurity implements VerifiedFileSecurity {
       "if($action -eq 'apply'){$acl=if($directory){[System.Security.AccessControl.DirectorySecurity]::new()}else{[System.Security.AccessControl.FileSecurity]::new()};$acl.SetOwner($sid);$acl.SetAccessRuleProtection($true,$false);$inherit=if($directory){[System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[System.Security.AccessControl.InheritanceFlags]::None};$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,[System.Security.AccessControl.FileSystemRights]::FullControl,$inherit,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow);$acl.AddAccessRule($rule);Set-Acl -LiteralPath $path -AclObject $acl}",
       "$actual=Get-Acl -LiteralPath $path",
       "$rules=@($actual.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]))",
-      `if(-not $actual.AreAccessRulesProtected -or $actual.Owner -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference -ne $sid -or $rules[0].AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or (($rules[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl)){$code=${String(UNSAFE_ACL_EXIT_CODE)}}`,
+      // `$actual.Owner` is the translated NTAccount form (`COMPUTER\user`),
+      // which never equals an SID string. Compare SID to SID.
+      "$owner=$actual.GetOwner([System.Security.Principal.SecurityIdentifier])",
+      "$safe=$actual.AreAccessRulesProtected -and $null -ne $owner -and $owner.Value -eq $sid.Value -and $rules.Count -eq 1 -and $rules[0].IdentityReference.Value -eq $sid.Value -and $rules[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and (($rules[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl)",
+      // Single quotes only: a double quote here would have to survive Node's
+      // Windows argument escaping on the way to powershell.exe.
+      `if(-not $safe){[Console]::Error.WriteLine('unsafe protected=' + $actual.AreAccessRulesProtected + ' owner=' + $owner.Value + ' expected=' + $sid.Value + ' rules=' + $rules.Count + ' identity=' + $rules[0].IdentityReference.Value + ' type=' + $rules[0].AccessControlType + ' rights=' + $rules[0].FileSystemRights);$code=${String(UNSAFE_ACL_EXIT_CODE)}}`,
     ].join(";");
     const script = [
       "$ErrorActionPreference='Stop'",

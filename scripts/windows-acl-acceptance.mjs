@@ -48,7 +48,10 @@ const reportingRunner = {
       env: powerShellEnvironment(),
     });
     if (result.error) throw result.error;
-    if (result.status !== 0 && result.status !== 3)
+    // An unsafe verdict (3) is a normal result, but it still explains itself on
+    // stderr, and that explanation is the whole point when a hardened path is
+    // rejected.
+    if (result.status !== 0 || result.stderr !== "")
       process.stderr.write(
         `${command} exited with ${String(result.status)}\n` +
           `script: ${args[5]}\n` +

@@ -249,12 +249,16 @@ $acl.AddAccessRule($rule)
 Set-Acl -LiteralPath $Path -AclObject $acl
 $actual = Get-Acl -LiteralPath $Path
 $rules = @($actual.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
-if (-not $actual.AreAccessRulesProtected -or $actual.Owner -ne $sid.Value -or
-    $rules.Count -ne 1 -or $rules[0].IdentityReference -ne $sid -or
+$owner = $actual.GetOwner([Security.Principal.SecurityIdentifier])
+if (-not $actual.AreAccessRulesProtected -or $null -eq $owner -or
+    $owner.Value -ne $sid.Value -or
+    $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or
     $rules[0].AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
     (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne
       [Security.AccessControl.FileSystemRights]::FullControl)) { exit 3 }
 ```
+
+Ownership is compared SID to SID. `Get-Acl`'s `.Owner` property is the translated `NTAccount` form (`COMPUTER\user`), which never equals an SID string, so comparing against it rejects every correctly hardened path.
 
 A `DirectorySecurity` variant adds `ContainerInherit,ObjectInherit` for directories. The `cross-keychain@1.1.0` spike demonstrated the same no-shell platform command shape and an inbox Windows Credential Manager P/Invoke backend, but its optional `@napi-rs/keyring` dependency made it unsuitable as a runtime dependency. This uses inbox PowerShell/.NET ACL APIs and is independent of localized `icacls` output. File fallback is not OS-backed encryption, so every backend diagnostic and first use warns without printing the path's contents.
 
