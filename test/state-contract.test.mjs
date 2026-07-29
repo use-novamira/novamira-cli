@@ -229,7 +229,10 @@ test("locks coordinate independent managers, stale owners recover, and failed at
 
     const calls = [];
     const windows = new WindowsFileSecurity({
-      run: async (command, args) => calls.push([command, args]),
+      run: async (command, args) => {
+        calls.push([command, args]);
+        return 0;
+      },
     });
     await windows.secureDirectory("C:\\State");
     await windows.secureFile("C:\\State\\config.json");
@@ -237,12 +240,46 @@ test("locks coordinate independent managers, stale owners recover, and failed at
     assert.equal(await windows.verifyFile("C:\\State\\config.json"), true);
     assert.equal(calls.length, 4);
     assert.equal(calls[0][0], "powershell.exe");
+    for (const [, args] of calls) {
+      // `$args` never binds under `-Command`; every input must be inlined.
+      assert.deepEqual(args.slice(0, 3), [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+      ]);
+      assert.equal(args.length, 4);
+      assert.ok(!args[3].includes("$args["));
+    }
     assert.deepEqual(
-      calls.map(([, args]) => args.at(-1)),
+      calls.map(([, args]) => /\$action='([a-z]+)'/.exec(args[3])[1]),
       ["apply", "apply", "verify", "verify"],
     );
-    assert.equal(calls[0][1].at(-2), "directory");
-    assert.equal(calls[1][1].at(-2), "file");
+    assert.deepEqual(
+      calls.map(([, args]) => /\$directory=\$([a-z]+)/.exec(args[3])[1]),
+      ["true", "false", "true", "false"],
+    );
+    assert.ok(calls[0][1][3].includes("$path='C:\\State'"));
+
+    const unsafe = new WindowsFileSecurity({ run: async () => 3 });
+    assert.equal(await unsafe.verifyDirectory("C:\\State"), false);
+    assert.equal(await unsafe.verifyFile("C:\\State\\config.json"), false);
+    await assert.rejects(unsafe.secureDirectory("C:\\State"));
+
+    const broken = new WindowsFileSecurity({ run: async () => 1 });
+    await assert.rejects(broken.verifyFile("C:\\State\\config.json"));
+    await assert.rejects(broken.secureFile("C:\\State\\config.json"));
+
+    const quoting = new WindowsFileSecurity({ run: async () => 0 });
+    await assert.rejects(quoting.secureFile('C:\\State\\a"b.json'));
+    const quoted = [];
+    const escaping = new WindowsFileSecurity({
+      run: async (_command, args) => {
+        quoted.push(args[3]);
+        return 0;
+      },
+    });
+    await escaping.secureFile("C:\\State\\o'brien.json");
+    assert.ok(quoted[0].includes("$path='C:\\State\\o''brien.json'"));
   } finally {
     await rm(state.root, { recursive: true, force: true });
   }

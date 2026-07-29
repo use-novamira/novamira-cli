@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { powerShellLiteral } from "../config/powershell.js";
 import { CliError } from "../errors.js";
 import {
   BackendUnavailableError,
@@ -235,8 +236,8 @@ export class WindowsCredentialManagerBackend extends CommandCredentialBackend {
     const target = `${CREDENTIAL_SERVICE}/${account}`;
     const command = [
       "Add-Type -TypeDefinition $env:NOVAMIRA_CREDENTIAL_SOURCE",
-      "$action=$args[0]",
-      "$target=$args[1]",
+      `$action=${powerShellLiteral(action)}`,
+      `$target=${powerShellLiteral(target)}`,
       "if($action -eq 'write'){[NovamiraCredential]::Write($target,[Console]::In.ReadToEnd())}",
       "elseif($action -eq 'read'){$v=[NovamiraCredential]::Read($target);if($null -eq $v){Write-Output '__NOVAMIRA_NOT_FOUND__'}else{[Console]::Out.Write($v)}}",
       "else{[NovamiraCredential]::Delete($target)}",
@@ -249,8 +250,6 @@ export class WindowsCredentialManagerBackend extends CommandCredentialBackend {
         "-NonInteractive",
         "-Command",
         `$env:NOVAMIRA_CREDENTIAL_SOURCE=@'\n${WINDOWS_CREDENTIAL_SCRIPT}\n'@;${command}`,
-        action,
-        target,
       ],
       stdin,
     );

@@ -7,7 +7,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { LoginService, TerminalLoginInteraction } from "../dist/auth/login.js";
+import {
+  browserCommand,
+  LoginService,
+  TerminalLoginInteraction,
+} from "../dist/auth/login.js";
 import {
   LoopbackCallbackFactory,
   validateCallbackUrl,
@@ -518,4 +522,31 @@ test("login fails closed on denial, scope narrowing, invalid callbacks, timeout,
   } finally {
     await rm(current.root, { recursive: true, force: true });
   }
+});
+
+test("the browser command never puts the authorization URL in executable text", () => {
+  const url =
+    "https://example.test/oauth/authorize?state=abc';Remove-Item%20C:%5C&scope=x";
+  assert.deepEqual(browserCommand(url, "darwin"), {
+    file: "open",
+    args: [url],
+    environment: {},
+  });
+  assert.deepEqual(browserCommand(url, "linux"), {
+    file: "xdg-open",
+    args: [url],
+    environment: {},
+  });
+  const windows = browserCommand(url, "win32");
+  assert.equal(windows.file, "powershell.exe");
+  // $args never binds under -Command, and the URL is remote metadata, so it is
+  // read from the environment rather than interpolated into the script.
+  assert.deepEqual(windows.args, [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    "Start-Process -FilePath $env:NOVAMIRA_BROWSER_URL",
+  ]);
+  assert.deepEqual(windows.environment, { NOVAMIRA_BROWSER_URL: url });
+  assert.ok(!windows.args.some((argument) => argument.includes(url)));
 });

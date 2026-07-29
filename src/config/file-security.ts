@@ -4,6 +4,8 @@
 import { chmod, mkdir, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 
+import { powerShellLiteral } from "./powershell.js";
+
 export interface FileSecurity {
   secureDirectory(path: string): Promise<void>;
   secureFile(path: string): Promise<void>;
@@ -40,24 +42,29 @@ export class UnixFileSecurity implements VerifiedFileSecurity {
 }
 
 export interface CommandRunner {
-  run(command: string, args: readonly string[]): Promise<void>;
+  run(command: string, args: readonly string[]): Promise<number>;
 }
 
 export class SpawnCommandRunner implements CommandRunner {
-  async run(command: string, args: readonly string[]): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+  async run(command: string, args: readonly string[]): Promise<number> {
+    return new Promise<number>((resolve, reject) => {
       const child = spawn(command, [...args], {
         stdio: "ignore",
         windowsHide: true,
       });
       child.once("error", reject);
-      child.once("exit", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`${command} exited with status ${String(code)}`));
+      child.once("exit", (code, signal) => {
+        if (code === null)
+          reject(
+            new Error(`${command} terminated with signal ${String(signal)}`),
+          );
+        else resolve(code);
       });
     });
   }
 }
+
+const UNSAFE_ACL_EXIT_CODE = 3;
 
 export class WindowsFileSecurity implements VerifiedFileSecurity {
   constructor(
@@ -73,27 +80,31 @@ export class WindowsFileSecurity implements VerifiedFileSecurity {
   }
 
   async verifyDirectory(path: string): Promise<boolean> {
-    await this.verify(path);
-    return true;
+    return this.verify(path, true);
   }
 
   async verifyFile(path: string): Promise<boolean> {
-    await this.verify(path);
-    return true;
+    return this.verify(path, false);
   }
 
   private async apply(path: string, directory: boolean): Promise<void> {
-    await this.runner.run(
+    const code = await this.runner.run(
       "powershell.exe",
       this.arguments(path, directory, "apply"),
     );
+    if (code !== 0)
+      throw new Error(`powershell.exe exited with status ${String(code)}`);
   }
 
-  private async verify(path: string): Promise<void> {
-    await this.runner.run(
+  private async verify(path: string, directory: boolean): Promise<boolean> {
+    const code = await this.runner.run(
       "powershell.exe",
-      this.arguments(path, false, "verify"),
+      this.arguments(path, directory, "verify"),
     );
+    if (code === UNSAFE_ACL_EXIT_CODE) return false;
+    if (code !== 0)
+      throw new Error(`powershell.exe exited with status ${String(code)}`);
+    return true;
   }
 
   private arguments(
@@ -101,25 +112,23 @@ export class WindowsFileSecurity implements VerifiedFileSecurity {
     directory: boolean,
     action: "apply" | "verify",
   ): string[] {
-    const script = [
-      "$path=$args[0]",
-      "$directory=$args[1] -eq 'directory'",
-      "$action=$args[2]",
+    const body = [
       "$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User",
       "if($action -eq 'apply'){$acl=if($directory){[System.Security.AccessControl.DirectorySecurity]::new()}else{[System.Security.AccessControl.FileSecurity]::new()};$acl.SetOwner($sid);$acl.SetAccessRuleProtection($true,$false);$inherit=if($directory){[System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[System.Security.AccessControl.InheritanceFlags]::None};$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,[System.Security.AccessControl.FileSystemRights]::FullControl,$inherit,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow);$acl.AddAccessRule($rule);Set-Acl -LiteralPath $path -AclObject $acl}",
       "$actual=Get-Acl -LiteralPath $path",
       "$rules=@($actual.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]))",
-      "if(-not $actual.AreAccessRulesProtected -or $actual.Owner -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference -ne $sid -or $rules[0].AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or (($rules[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl)){throw 'unsafe ACL'}",
+      `if(-not $actual.AreAccessRulesProtected -or $actual.Owner -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference -ne $sid -or $rules[0].AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or (($rules[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl)){$code=${String(UNSAFE_ACL_EXIT_CODE)}}`,
     ].join(";");
-    return [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      script,
-      path,
-      directory ? "directory" : "file",
-      action,
-    ];
+    const script = [
+      "$ErrorActionPreference='Stop'",
+      `$path=${powerShellLiteral(path)}`,
+      `$directory=$${String(directory)}`,
+      `$action=${powerShellLiteral(action)}`,
+      "$code=0",
+      `try{${body}}catch{$code=1}`,
+      "exit $code",
+    ].join(";");
+    return ["-NoProfile", "-NonInteractive", "-Command", script];
   }
 }
 

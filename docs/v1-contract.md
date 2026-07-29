@@ -231,7 +231,7 @@ Fallback files are `credentials/v1/<account>.json`, written under the profile lo
 5. Apply with `Set-Acl -LiteralPath` and re-read with `Get-Acl`.
 6. Accept only a protected ACL whose owner is the current SID and whose explicit/inherited allow or deny rules mention no other SID. Reject unverifiable ACLs and remove an unsafe temporary file.
 
-The Phase 0 prototype uses this locale-independent core (the implementation passes the path as a bound parameter, not interpolated source):
+The Phase 0 prototype uses this locale-independent core. `powershell.exe` populates `$args` only under `-File`; under `-Command` trailing values are appended to the command text and executed, so the implementation inlines the path as a single-quoted literal with embedded quotes doubled, and rejects any path containing a double quote or newline. The script never propagates its result through an exception: it exits `0` when the ACL is safe, `3` when the ACL is unsafe, and `1` on any other failure, so an unsafe ACL is reported as an unsafe path rather than an internal error.
 
 ```powershell
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
@@ -251,7 +251,7 @@ if (-not $actual.AreAccessRulesProtected -or $actual.Owner -ne $sid.Value -or
     $rules.Count -ne 1 -or $rules[0].IdentityReference -ne $sid -or
     $rules[0].AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
     (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne
-      [Security.AccessControl.FileSystemRights]::FullControl)) { throw 'unsafe ACL' }
+      [Security.AccessControl.FileSystemRights]::FullControl)) { exit 3 }
 ```
 
 A `DirectorySecurity` variant adds `ContainerInherit,ObjectInherit` for directories. The `cross-keychain@1.1.0` spike demonstrated the same no-shell platform command shape and an inbox Windows Credential Manager P/Invoke backend, but its optional `@napi-rs/keyring` dependency made it unsuitable as a runtime dependency. This uses inbox PowerShell/.NET ACL APIs and is independent of localized `icacls` output. File fallback is not OS-backed encryption, so every backend diagnostic and first use warns without printing the path's contents.

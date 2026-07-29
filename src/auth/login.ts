@@ -360,28 +360,44 @@ export function buildAuthorizationUrl(input: {
   return url.toString();
 }
 
+export interface BrowserCommand {
+  readonly file: string;
+  readonly args: readonly string[];
+  readonly environment: Readonly<Record<string, string>>;
+}
+
+// `$args` is never populated under `-Command`, and interpolating the URL into
+// the script would make remote metadata executable text, so on Windows the URL
+// travels in the child's environment instead.
+export function browserCommand(
+  url: string,
+  platform: NodeJS.Platform,
+): BrowserCommand {
+  if (platform === "darwin")
+    return { file: "open", args: [url], environment: {} };
+  if (platform === "win32")
+    return {
+      file: "powershell.exe",
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Start-Process -FilePath $env:NOVAMIRA_BROWSER_URL",
+      ],
+      environment: { NOVAMIRA_BROWSER_URL: url },
+    };
+  return { file: "xdg-open", args: [url], environment: {} };
+}
+
 export class SystemBrowserLauncher implements BrowserLauncher {
   async open(url: string): Promise<void> {
-    const command =
-      process.platform === "darwin"
-        ? { file: "open", args: [url] }
-        : process.platform === "win32"
-          ? {
-              file: "powershell.exe",
-              args: [
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "Start-Process -FilePath $args[0]",
-                url,
-              ],
-            }
-          : { file: "xdg-open", args: [url] };
+    const command = browserCommand(url, process.platform);
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(command.file, command.args, {
+      const child = spawn(command.file, [...command.args], {
         detached: true,
         stdio: "ignore",
         windowsHide: true,
+        env: { ...process.env, ...command.environment },
       });
       child.once("error", reject);
       child.once("spawn", () => {

@@ -261,3 +261,63 @@ test("macOS keychain backend stores long secrets without truncation or emptying"
     await rm(current.root, { recursive: true, force: true });
   }
 });
+
+test("the Windows credential backend inlines its inputs instead of relying on $args", async () => {
+  const current = await state();
+  try {
+    const records = new Map();
+    // Faithful stand-in for `powershell.exe -Command`: $args is never populated,
+    // so the mock reads the action and target only from the script text.
+    const executor = {
+      execute: async (command, args, stdin = "") => {
+        assert.equal(command, "powershell.exe");
+        assert.deepEqual(args.slice(0, 3), [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+        ]);
+        assert.equal(
+          args.length,
+          4,
+          "trailing values are appended to the command text, not bound to $args",
+        );
+        const script = args[3];
+        if (script === "$PSVersionTable.PSVersion.ToString()")
+          return { code: 0, stdout: "5.1\n" };
+        assert.doesNotMatch(script, /\$args\[/);
+        const action = /\$action='([a-z]+)'/.exec(script)?.[1];
+        const target = /\$target='([^']+)'/.exec(script)?.[1];
+        assert.ok(action, `script must inline its action: ${script}`);
+        assert.ok(target, `script must inline its target: ${script}`);
+        if (action === "write") {
+          records.set(target, stdin);
+          return { code: 0, stdout: "" };
+        }
+        if (action === "read")
+          return {
+            code: 0,
+            stdout: records.get(target) ?? "__NOVAMIRA_NOT_FOUND__\n",
+          };
+        records.delete(target);
+        return { code: 0, stdout: "" };
+      },
+    };
+    const keychain = await createCredentialStore(
+      current.paths.credentialsDir,
+      current.locks,
+      current.security,
+      { platform: "win32", executor },
+    );
+    assert.equal(keychain.diagnostic().backend, "windows-credential-manager");
+    await keychain.replace(target, first);
+    assert.deepEqual(await keychain.read(target), first);
+    await keychain.replace(target, second);
+    assert.deepEqual(await keychain.read(target), second);
+    await keychain.delete(target);
+    assert.equal(await keychain.read(target), undefined);
+    // The secret record travels on stdin only.
+    assert.equal(records.size, 0);
+  } finally {
+    await rm(current.root, { recursive: true, force: true });
+  }
+});

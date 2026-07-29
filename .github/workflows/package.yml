@@ -34,8 +34,9 @@ jobs:
       - run: bun run package:acceptance
 
   # The contract tests hardcode UnixFileSecurity and assert POSIX modes, so they
-  # cannot run on Windows; the Windows ACL path in src/config/file-security.ts is
-  # therefore not covered here. Windows keeps packaging acceptance only.
+  # cannot run on Windows. The Windows ACL path in src/config/file-security.ts
+  # is covered instead by windows:acceptance, which drives powershell.exe and
+  # doctor against real ACLs.
   package-windows:
     name: windows-latest / Node ${{ matrix.node }}
     strategy:
@@ -56,3 +57,4 @@ jobs:
       - run: bun run lint
       - run: bun run format:check
       - run: bun run package:acceptance
+      - run: bun run windows:acceptance
