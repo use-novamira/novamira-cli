@@ -39,17 +39,30 @@ jobs:
       - name: Publish with trusted provenance
         run: npm publish --access public --tag latest --provenance --loglevel verbose
       - name: Verify exact public publication
+        # `npm view` reads the packument, but the acceptance run fetches the
+        # tarball, and the registry can serve the first before the second.
+        # Wait on the operation that is actually gated, and revalidate rather
+        # than answering any probe from a packument cached before publication.
+        env:
+          NPM_CONFIG_PREFER_ONLINE: "true"
         run: |
           version=${GITHUB_REF_NAME#v}
-          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            if npm view @novamira/cli@$version version --json >/dev/null 2>&1; then
-              break
-            fi
-            if [ "$attempt" = 12 ]; then
-              echo "npm did not expose @novamira/cli@$version within 60 seconds" >&2
-              exit 1
-            fi
-            sleep 5
-          done
+          await() {
+            description=$1
+            shift
+            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              if "$@" >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 5
+            done
+            echo "npm did not serve $description for @novamira/cli@$version within 60 seconds" >&2
+            return 1
+          }
+          attested() {
+            npm view @novamira/cli@$version dist.attestations --json |
+              node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{if(!JSON.parse(s).provenance)process.exit(1)})'
+          }
+          await "the tarball" npm pack @novamira/cli@$version --dry-run --ignore-scripts --json
           node scripts/package-acceptance.mjs --package=@novamira/cli@$version
-          npm view @novamira/cli@$version dist.attestations --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{if(!JSON.parse(s).provenance)process.exit(1)})'
+          await "the provenance attestation" attested
