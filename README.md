@@ -63,20 +63,20 @@ migration.
 
 ## Authentication
 
-Authorize full Ability access by default:
+Authorize the site:
 
 ```sh
 novamira auth login https://example.com --name example-site
 ```
 
-Use `--access read` when only readonly Ability access is requested. `--no-open` prints the browser authorization URL on stderr without launching a browser. Login allows five minutes for browser authorization by default; use `--timeout <ms>` to override that wait. Login checks public compatibility before opening a listener or browser, uses PKCE S256, verifies the authenticated Ability surface, and only then stores the grant.
+Every login authorizes the complete MCP and REST-visible Ability surface. `--no-open` prints the browser authorization URL on stderr without launching a browser. Login allows five minutes for browser authorization by default; use `--timeout <ms>` to override that wait. Login checks public compatibility before opening a listener or browser, uses PKCE S256, verifies the authenticated Ability surface, and only then stores the grant.
 
 For isolated development networks that expose a site over plain HTTP with a
 non-loopback hostname, opt in for each CLI invocation with
 `NOVAMIRA_ALLOW_INSECURE_HTTP=1`. Never use this override with production sites
 or untrusted networks.
 
-`novamira auth status` reports the selected profile's grant, expiry state, and
+`novamira auth status` reports the selected profile's authorization, expiry state, and
 REST reachability without printing credentials. `novamira auth logout` attempts
 to revoke the rotating refresh grant and always removes local credentials and
 cached Ability metadata; a remote revocation failure is reported as a warning.
@@ -106,7 +106,7 @@ novamira guide get core
 novamira guide get core --full
 ```
 
-The core guide teaches explicit site selection, full-default authorization,
+The core guide teaches explicit site selection, authorization,
 live discovery and description, relevant site-skill loading, mutation
 confirmation and verification, and remote-content trust boundaries.
 
@@ -117,7 +117,7 @@ novamira auth login https://example.com --name example-site
 novamira --site example-site upload ./plugin.zip wp-content/plugins/plugin.zip
 ```
 
-Upload requires a full Ability grant. The CLI creates the temporary
+Upload uses the site's full OAuth authorization. The CLI creates the temporary
 grant through the normal REST-visible Ability surface, then streams the file
 once with only the dedicated temporary credential. It never sends the primary
 OAuth Bearer token to the upload endpoint and does not retry an ambiguous

@@ -1,12 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import {
-  Command,
-  CommanderError,
-  InvalidArgumentError,
-  Option,
-} from "commander";
+import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { CliError } from "../errors.js";
 
 const DEFAULT_OPERATION_TIMEOUT_MS = 30_000;
@@ -25,7 +20,6 @@ export interface GlobalOptions {
 
 export interface AuthLoginOptions extends GlobalOptions {
   readonly name?: string;
-  readonly access: "read" | "full";
   readonly open: boolean;
 }
 
@@ -148,11 +142,6 @@ export function createProgram(
   auth
     .command("login <url>")
     .option("--name <name>", "profile name")
-    .addOption(
-      new Option("--access <level>", "requested access")
-        .choices(["read", "full"])
-        .default("full"),
-    )
     .option("--no-open", "do not launch a browser")
     .action(async (url: string, ...values: unknown[]) =>
       handlers.authLogin(url, authLoginOptions(values)),

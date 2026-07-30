@@ -84,21 +84,19 @@ if (args.includes("--version") || args.includes("guide")) {
     if (args.includes("status"))
       success({
         site: "staging",
-        scope: state.grant === "full" ? "abilities" : "abilities:read",
+        authenticated: state.authorized === true,
       });
-    else if (!args.includes("--access") || valueAfter(args, "--access") !== "full")
-      failure("usage_error", "The trial mutation requires explicit full access.", 2);
     else {
-      state.grant = "full";
+      state.authorized = true;
       await saveState(state);
-      success({ site: "staging", scope: "abilities" });
+      success({ site: "staging" });
     }
   } else if (command === "run") {
     const ability = valueAfter(args, "run");
     const input = JSON.parse(valueAfter(args, "--input") ?? "null");
     if (ability === "example/update-option") {
-      if (state.grant !== "full")
-        failure("insufficient_scope", "Full access is required.", 3);
+      if (state.authorized !== true)
+        failure("auth_required", "Authentication is required.", 3);
       else if (!args.includes("--yes"))
         failure("confirmation_required", "Destructive confirmation is required.", 6);
       else {
@@ -119,7 +117,7 @@ async function loadState() {
     return JSON.parse(await readFile(statePath, "utf8"));
   } catch (error) {
     if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
-    return { grant: "read", value: "old-title" };
+    return { authorized: false, value: "old-title" };
   }
 }
 

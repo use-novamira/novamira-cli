@@ -44,14 +44,8 @@ export interface OnlineDoctorDependencies extends OfflineDoctorDependencies {
     profile: SiteProfile,
     lifecycle: TokenLifecycle,
   ): AbilityClient;
-  readonly confirmLogin?: (
-    profile: SiteProfile,
-    access: "read" | "full",
-  ) => Promise<boolean>;
-  readonly login?: (
-    profile: SiteProfile,
-    access: "read" | "full",
-  ) => Promise<void>;
+  readonly confirmLogin?: (profile: SiteProfile) => Promise<boolean>;
+  readonly login?: (profile: SiteProfile) => Promise<void>;
 }
 
 interface ProbeFailure {
@@ -110,16 +104,15 @@ export function onlineDoctorDefinitions(
         dependencies.now?.() ?? Date.now(),
       );
     } catch {
-      localStatus = { access: null, credentialState: "absent" };
+      localStatus = { credentialState: "absent" };
     }
     if (
       localStatus.credentialState !== "absent" &&
       localStatus.credentialState !== "expired"
     )
       return false;
-    const access = localStatus.access === "full" ? "full" : "read";
-    if (!(await dependencies.confirmLogin(selected, access))) return false;
-    await dependencies.login(selected, access);
+    if (!(await dependencies.confirmLogin(selected))) return false;
+    await dependencies.login(selected);
     repairedLogin = true;
     return true;
   });
@@ -248,20 +241,21 @@ export function onlineDoctorDefinitions(
         if (!authorizationResult.ok)
           return failedCheck(authorizationResult.error);
         if (!status.ok) return failedCheck(status.error);
-        if (status.value.access !== "read" && status.value.access !== "full")
+        if (
+          !resourceResult.value.scopes_supported.includes("mcp") ||
+          !authorizationResult.value.scopes_supported.includes("mcp")
+        )
           return {
             status: "fail",
-            summary: "No valid Ability scope is granted locally.",
+            summary: "The full-access OAuth scope is unavailable.",
             evidence: {
               category: "insufficient_scope",
-              access: status.value.access,
             },
           };
         return {
           status: "pass",
-          summary: "The selected Ability scope is advertised and granted.",
+          summary: "The full-access OAuth scope is advertised.",
           evidence: {
-            access: status.value.access,
             protectedResource: advertisedScopes(
               resourceResult.value.scopes_supported,
             ),
@@ -307,7 +301,7 @@ export function onlineDoctorDefinitions(
       run: () =>
         checkProbe(
           context(),
-          "The readonly execution shim is reachable.",
+          "The Ability execution shim is reachable.",
           () => ({
             ability: CONTEXT_ABILITY,
           }),
@@ -470,9 +464,7 @@ function failureSummary(category: string): string {
 }
 
 function advertisedScopes(scopes: readonly string[]): readonly string[] {
-  return ["abilities:read", "abilities"].filter((scope) =>
-    scopes.includes(scope),
-  );
+  return ["mcp"].filter((scope) => scopes.includes(scope));
 }
 
 function authorizationEvidence(
@@ -494,7 +486,6 @@ function tokenStatusCheck(
 ): Omit<DoctorCheck, "id"> {
   const baseEvidence = {
     credentialState: status.credentialState,
-    access: status.access,
     expiresAt: status.expiresAt ?? null,
     restReachable: status.restReachable,
     ...(status.restError === undefined ? {} : { restError: status.restError }),

@@ -45,14 +45,13 @@ const compatibility = {
   minimum_wordpress_version: "6.9",
   features: {
     abilities_bearer_auth: true,
-    abilities_read_scope: true,
     agent_context: true,
     rest_skills: true,
     generalized_execution_shim: true,
   },
 };
 
-test("REST-only acceptance covers login, rotation, grants, extensions, capability loss, revoke, and re-login", async () => {
+test("REST-only acceptance covers full-access login, rotation, extensions, capability loss, revoke, and re-login", async () => {
   const root = await mkdtemp(join(tmpdir(), "novamira-security-acceptance-"));
   const siteUrl = "https://example.test/wordpress";
   const edge = new AcceptanceEdge(siteUrl);
@@ -81,16 +80,14 @@ test("REST-only acceptance covers login, rotation, grants, extensions, capabilit
   );
 
   try {
-    const readonly = await login.login({
+    await login.login({
       siteUrl,
       name: "acceptance",
-      access: "read",
       noOpen: false,
       timeoutMs: 1_000,
     });
-    assert.equal(readonly.scope, "abilities:read");
-    let profile = await profiles.get("acceptance");
-    let lifecycle = new TokenLifecycle(
+    const profile = await profiles.get("acceptance");
+    const lifecycle = new TokenLifecycle(
       profile,
       locks,
       credentials,
@@ -99,7 +96,7 @@ test("REST-only acceptance covers login, rotation, grants, extensions, capabilit
       http,
       1_000,
     );
-    let abilities = new AbilityClient(
+    const abilities = new AbilityClient(
       profile,
       metadata,
       lifecycle,
@@ -124,30 +121,6 @@ test("REST-only acceptance covers login, rotation, grants, extensions, capabilit
       (await getSiteSkill(abilities, "theme-maintenance")).data.found,
       true,
     );
-    await assert.rejects(
-      abilities.run("vendor/extension-action", { value: "blocked" }),
-      { code: "insufficient_scope" },
-    );
-
-    const full = await login.login({
-      siteUrl,
-      name: "acceptance",
-      access: "full",
-      noOpen: true,
-      timeoutMs: 1_000,
-    });
-    assert.equal(full.scope, "abilities");
-    profile = await profiles.get("acceptance");
-    lifecycle = new TokenLifecycle(
-      profile,
-      locks,
-      credentials,
-      cache,
-      metadata,
-      http,
-      1_000,
-    );
-    abilities = new AbilityClient(profile, metadata, lifecycle, cache, 1_000);
     assert.deepEqual(
       (await abilities.run("vendor/extension-action", { value: "allowed" }))
         .data,
@@ -189,11 +162,10 @@ test("REST-only acceptance covers login, rotation, grants, extensions, capabilit
     await login.login({
       siteUrl,
       name: "acceptance",
-      access: "read",
       noOpen: false,
       timeoutMs: 1_000,
     });
-    assert.equal((await credentials.read(target)).scope, "abilities:read");
+    assert.equal((await credentials.read(target)).scope, "mcp");
     assert.doesNotMatch(
       await readFile(paths.configFile, "utf8"),
       /access-(?:code|refresh)|refresh-(?:code|refresh)/,
@@ -313,7 +285,7 @@ class AcceptanceEdge {
         resource: `${this.siteUrl}/wp-json/mcp/novamira-oauth`,
         authorization_servers: [this.siteUrl],
         bearer_methods_supported: ["header"],
-        scopes_supported: ["abilities:read", "abilities", "mcp"],
+        scopes_supported: ["mcp"],
         novamira: compatibility,
       });
     if (path === `${this.basePath}/.well-known/oauth-authorization-server`)
@@ -327,7 +299,7 @@ class AcceptanceEdge {
         grant_types_supported: ["authorization_code", "refresh_token"],
         code_challenge_methods_supported: ["S256"],
         token_endpoint_auth_methods_supported: ["none"],
-        scopes_supported: ["abilities:read", "abilities", "mcp"],
+        scopes_supported: ["mcp"],
       });
     if (path.endsWith("/oauth/register")) {
       const body = JSON.parse(init.body);
@@ -344,9 +316,7 @@ class AcceptanceEdge {
       const body = new URLSearchParams(init.body);
       const refresh = body.get("grant_type") === "refresh_token";
       if (refresh) this.refreshes += 1;
-      const scope = refresh
-        ? body.get("scope")
-        : body.get("code")?.replace("code-", "");
+      const scope = refresh ? "mcp" : body.get("code")?.replace("code-", "");
       this.issued += 1;
       const accessToken = `access-${refresh ? "refresh" : "code"}-${this.issued}`;
       this.tokenScopes.set(accessToken, scope);
@@ -388,11 +358,11 @@ class AcceptanceEdge {
         content: "# Theme Maintenance",
       });
     if (path.endsWith("/novamira/destructive-write/run")) {
-      if (scope !== "abilities") return wpError("rest_oauth_error", 403);
+      if (scope !== "mcp") return wpError("rest_oauth_error", 403);
       return Response.json({ updated: true });
     }
     if (path.endsWith("/vendor/extension-action/run")) {
-      if (scope !== "abilities") return wpError("rest_oauth_error", 403);
+      if (scope !== "mcp") return wpError("rest_oauth_error", 403);
       return Response.json({ extension: JSON.parse(init.body).input.value });
     }
     return wpError("rest_no_route", 404);

@@ -21,19 +21,14 @@ Discovery is a compact index. `describe` and site-skill loading are required whe
 
 ## Access
 
-Login defaults to full access:
+Every login grants full access:
 
 ```sh
 novamira auth login https://example.com --name example-site
 ```
 
-Request readonly access only when the user or task specifically requires it:
-
-```sh
-novamira auth login https://example.com --name example-site --access read
-```
-
-Never replace an existing readonly grant with full access automatically. `--yes` confirms a destructive invocation; it does not broaden the grant.
+Authorization scope does not replace task-level approval. `--yes` confirms a
+destructive invocation; it does not grant permission for an unapproved task.
 
 ## Execute And Verify
 

@@ -39,7 +39,7 @@ test("bundled guidance is complete, consistent, and safely opinionated", async (
     "skill get <slug>",
     "describe <ability>",
     "run <ability>",
-    "--access read",
+    "auth login",
     "--input @request.json",
     "--input -",
     "readonly Ability",
@@ -62,7 +62,7 @@ test("bundled guidance is complete, consistent, and safely opinionated", async (
   );
   assert.doesNotMatch(
     actionableGuidance,
-    /(?:automatically|without approval).{0,40}(?:escalat|full access|--access full)/i,
+    /(?:automatically|without approval).{0,40}escalat/i,
   );
   assert.doesNotMatch(
     actionableGuidance,

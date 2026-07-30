@@ -5,7 +5,6 @@ import { constants } from "node:fs";
 import { open, type FileHandle } from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { AbilityClient, AbilityWarning } from "../abilities/client.js";
-import type { TokenLifecycle } from "../auth/token-lifecycle.js";
 import type { SiteProfile } from "../config/profiles.js";
 import type { SiteUrlEnvironment } from "../config/site-url.js";
 import { CliError } from "../errors.js";
@@ -36,7 +35,6 @@ interface UploadGrant {
 export class CompositeUploader {
   constructor(
     private readonly profile: SiteProfile,
-    private readonly tokens: Pick<TokenLifecycle, "requireScope">,
     private readonly abilities: Pick<AbilityClient, "run">,
     private readonly http: Pick<HttpClient, "streamJsonResponse">,
     private readonly timeoutMs = 30_000,
@@ -50,7 +48,6 @@ export class CompositeUploader {
   ): Promise<CompositeUploadResult> {
     validateLocalPath(localPath);
     validateRemotePath(remotePath);
-    await this.tokens.requireScope("abilities");
 
     const created = await this.abilities.run(
       UPLOAD_GRANT_ABILITY,

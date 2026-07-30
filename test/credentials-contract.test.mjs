@@ -20,7 +20,7 @@ const first = {
   version: 1,
   accessToken: "access-secret-one",
   refreshToken: "refresh-secret-one",
-  scope: "abilities:read",
+  scope: "mcp",
   expiresAt: "2026-07-20T15:00:00.000Z",
 };
 const second = {
@@ -197,7 +197,7 @@ test("macOS keychain backend stores long secrets without truncation or emptying"
       version: 1,
       accessToken: `header.${"payloadsegment".repeat(30)}.signature`,
       refreshToken: "refresh-secret-one",
-      scope: "abilities",
+      scope: "mcp",
       expiresAt: "2026-07-20T15:00:00.000Z",
     };
     let stored;

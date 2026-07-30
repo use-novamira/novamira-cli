@@ -32,7 +32,7 @@ const resource = {
   resource: `${profile.origin}/wp-json/mcp/novamira-oauth`,
   authorization_servers: [profile.origin],
   bearer_methods_supported: ["header"],
-  scopes_supported: ["abilities:read", "abilities"],
+  scopes_supported: ["mcp"],
   novamira: {},
 };
 const authorization = {
@@ -94,7 +94,7 @@ async function setup(
   return { root, credentials, invalidations, lifecycle };
 }
 
-function credential(accessToken, refreshToken, expiresIn, scope = "abilities") {
+function credential(accessToken, refreshToken, expiresIn, scope = "mcp") {
   return {
     version: 1,
     accessToken,
@@ -104,7 +104,7 @@ function credential(accessToken, refreshToken, expiresIn, scope = "abilities") {
   };
 }
 
-function token(scope = "abilities") {
+function token(scope = "mcp") {
   return Response.json({
     access_token: "access-2",
     refresh_token: "refresh-2",
@@ -114,7 +114,7 @@ function token(scope = "abilities") {
   });
 }
 
-test("refresh rotates safely, narrows only, fails closed, and gates 401 replay", async () => {
+test("refresh rotates safely, migrates old scopes, fails closed, and gates 401 replay", async () => {
   let refreshRequests = 0;
   let apiRequests = 0;
   let mode = "success";
@@ -125,14 +125,13 @@ test("refresh rotates safely, narrows only, fails closed, and gates 401 replay",
       const body = new URLSearchParams(init.body);
       assert.equal(body.get("grant_type"), "refresh_token");
       assert.equal(body.get("refresh_token"), "refresh-1");
-      assert.equal(
-        body.get("scope"),
-        mode === "broaden" ? "abilities:read" : "abilities",
-      );
+      assert.equal(body.get("scope"), null);
       if (mode === "invalid")
         return Response.json({ error: "invalid_grant" }, { status: 400 });
       if (mode === "lost") throw new Error("response lost");
-      return token(mode === "narrow" ? "abilities:read" : "abilities");
+      return token(
+        mode === "migrate" ? "mcp" : mode === "invalid-scope" ? "admin" : "mcp",
+      );
     }
     apiRequests += 1;
     if (apiRequests === 1)
@@ -150,30 +149,11 @@ test("refresh rotates safely, narrows only, fails closed, and gates 401 replay",
     assert.equal(await current.lifecycle.getAccessToken(), "access-1");
     assert.equal(refreshRequests, 0);
 
-    await current.lifecycle.requireScope("abilities");
-    current.credentials.record = credential(
-      "access-1",
-      "refresh-1",
-      3600,
-      "abilities:read",
-    );
-    await assert.rejects(current.lifecycle.requireScope("abilities"), {
-      code: "insufficient_scope",
-    });
-    assert.equal(refreshRequests, 0);
-
     current.credentials.record = credential("access-1", "refresh-1", 30);
-    mode = "narrow";
-    await assert.rejects(current.lifecycle.requireScope("abilities"), {
-      code: "insufficient_scope",
-    });
-    assert.equal(current.credentials.record.scope, "abilities:read");
-
-    current.credentials.record = credential("access-1", "refresh-1", 30);
-    mode = "narrow";
+    mode = "success";
     assert.equal(await current.lifecycle.getAccessToken(), "access-2");
     assert.equal(current.credentials.record.refreshToken, "refresh-2");
-    assert.equal(current.credentials.record.scope, "abilities:read");
+    assert.equal(current.credentials.record.scope, "mcp");
 
     current.credentials.record = credential(
       "access-1",
@@ -181,7 +161,12 @@ test("refresh rotates safely, narrows only, fails closed, and gates 401 replay",
       -1,
       "abilities:read",
     );
-    mode = "broaden";
+    mode = "migrate";
+    assert.equal(await current.lifecycle.getAccessToken(), "access-2");
+    assert.equal(current.credentials.record.scope, "mcp");
+
+    current.credentials.record = credential("access-1", "refresh-1", -1);
+    mode = "invalid-scope";
     await assert.rejects(current.lifecycle.getAccessToken(), {
       code: "auth_expired",
     });
@@ -255,7 +240,7 @@ test("two processes submit one rotating refresh token", async () => {
         refresh_token: "refresh-2",
         token_type: "Bearer",
         expires_in: 3600,
-        scope: "abilities:read",
+        scope: "mcp",
       }),
     );
   });
@@ -267,7 +252,7 @@ test("two processes submit one rotating refresh token", async () => {
     await credentials.replace(
       { profileName: "production", origin },
       {
-        ...credential("access-1", "refresh-1", -1, "abilities:read"),
+        ...credential("access-1", "refresh-1", -1),
       },
     );
     const worker = join(import.meta.dirname, "fixtures", "refresh-worker.mjs");
@@ -309,7 +294,6 @@ test("status discloses no tokens and logout always deletes local secrets", async
     assert.deepEqual(valid, {
       site: "production",
       siteUrl: "https://example.test",
-      access: "full",
       credentialState: "fresh",
       expiresAt: new Date(now + 3600_000).toISOString(),
       restReachable: true,
@@ -320,7 +304,6 @@ test("status discloses no tokens and logout always deletes local secrets", async
     assert.deepEqual(await current.lifecycle.status(), {
       site: "production",
       siteUrl: "https://example.test",
-      access: "full",
       credentialState: "expired",
       expiresAt: new Date(now - 1000).toISOString(),
       restReachable: false,

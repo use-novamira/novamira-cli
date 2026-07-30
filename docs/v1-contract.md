@@ -39,7 +39,6 @@ The required feature keys are fixed:
 
 ```text
 abilities_bearer_auth
-abilities_read_scope
 agent_context
 rest_skills
 generalized_execution_shim
@@ -51,22 +50,27 @@ Protected-resource metadata exposes the compatibility object as `novamira`. Auth
 
 The v1 token audience remains the existing normalized `rest_url('mcp/novamira-oauth')` resource identifier. The CLI never sends a runtime request to that endpoint; the value is only an OAuth audience/resource identifier.
 
-Scopes are exact, space-delimited OAuth scope tokens:
+`mcp` is the single OAuth scope. It authorizes the MCP protected resource and the
+complete REST-visible Ability surface, including compatible third-party
+abilities with `meta.show_in_rest: true`. Every authorization request and token
+refresh converges to this scope. Servers may accept the former
+`abilities:read`, `abilities`, `read`, and `write` scope names as upgrade
+aliases, but they are not advertised or requested by the CLI and do not
+represent permission modes.
 
-- `abilities:read` permits Ability list and item routes and shim execution only when the resolved Ability explicitly has `readonly: true`.
-- `abilities` includes read access and permits execution of every otherwise-permitted REST-visible Ability. The stored and returned grant remains `abilities`; it is not rewritten to include another token.
-- `mcp` remains isolated to the legacy endpoint. Existing `read`/`write` aliases map only to that legacy flow and never authorize Ability REST routes.
-
-Authorization requests may select Ability scopes or the legacy scope family, but may not mix them; mixed requests fail instead of producing a token valid on both surfaces.
-
-The full `abilities` grant includes third-party abilities with `meta.show_in_rest: true`. Consent must say: **“Full access permits execution of REST-visible abilities registered by Novamira and compatible third-party plugins, including abilities that can execute code, change content or settings, modify files, and create temporary administrator access.”** The read consent must say that only explicitly readonly abilities can execute. Neither grant bypasses the user's Novamira management capability, target Ability permission callback, or `show_in_rest` requirement.
+Consent must say: **“Full access permits execution of REST-visible abilities
+registered by Novamira and compatible third-party plugins, including abilities
+that can execute code, change content or settings, modify files, and create
+temporary administrator access.”** Authorization does not bypass the user's
+Novamira management capability, target Ability permission callback, or
+`show_in_rest` requirement.
 
 ## Command grammar
 
 The v1 command names are fixed:
 
 ```text
-novamira auth login <url> [--name <name>] [--access read|full] [--no-open]
+novamira auth login <url> [--name <name>] [--no-open]
 novamira auth status
 novamira auth logout
 novamira sites list
@@ -82,7 +86,7 @@ novamira doctor [--offline] [--fix]
 novamira update [--check]
 ```
 
-`auth login` requests full `abilities` access when `--access` is omitted. Readonly `abilities:read` access is requested only with `--access read`.
+`auth login` always requests the full `mcp` scope.
 
 Global options are `--site <name>`, `--json`, `--timeout <ms>`, `--yes`, `--max-output <bytes>`, `--no-color`, `--quiet`, `--verbose`, and `--version`. `NO_COLOR` has the same color-disabling effect as `--no-color`. Command-specific aliases and an implicit mutable default-site command are not part of v1.
 
@@ -121,8 +125,8 @@ description/execution path. Its site-controlled result, including
 `{"found":false}`, remains raw output and uses the normal output/artifact
 budget.
 
-`upload` requires the exact full `abilities` scope before creating a grant via
-`novamira/create-upload-link`. It accepts only the exact same-origin upload
+`upload` creates a temporary grant via `novamira/create-upload-link`. It accepts
+only the exact same-origin upload
 route, `PUT`, `X-Novamira-Upload-Token`, a future expiry of at most one hour,
 and a positive safe-integer byte limit. The opened regular file is streamed
 once with its exact length and only the temporary header credential; the OAuth
@@ -161,9 +165,8 @@ Ability clients. Remote evidence distinguishes unsupported, unreachable,
 unauthorized, insufficient-scope, and missing-surface outcomes without
 including response bodies or credentials. Public compatibility must agree
 exactly with authenticated agent context. `doctor --fix` may offer OAuth login
-only in an interactive terminal after explicit confirmation; it preserves a
-previous full grant, otherwise requests readonly access, and never silently
-broadens a grant, removes a profile, or revokes remote access.
+only in an interactive terminal after explicit confirmation. It never removes
+a profile or revokes remote access.
 
 ## Limits
 
@@ -200,16 +203,17 @@ The credential-store interface reads, atomically replaces, and deletes one versi
   "version": 1,
   "accessToken": "secret",
   "refreshToken": "secret",
-  "scope": "abilities:read",
+  "scope": "mcp",
   "expiresAt": "2026-07-20T15:00:00.000Z"
 }
 ```
 
 Refresh re-reads this record under the per-profile lock and atomically replaces
-all four token, scope, and expiry fields. A refresh response may preserve or
-narrow the existing Ability grant but never broaden it. `invalid_grant`, a lost
-response, or an invalid response removes the stale local credential so a
-possibly consumed rotating refresh token cannot be replayed. Authenticated
+all four token, scope, and expiry fields. A refresh may migrate a legacy
+`abilities` or `abilities:read` credential to `mcp`; unrelated scope
+substitutions are rejected. `invalid_grant`, a lost response, or an invalid
+response removes the stale local credential so a possibly consumed rotating
+refresh token cannot be replayed. Authenticated
 callers may replay once after a confirmed 401 only when they explicitly classify
 the request as known not accepted; ambiguous requests are never replayed.
 

@@ -232,7 +232,6 @@ export function createCommandHandlers(
         ).login({
           siteUrl,
           ...(options.name === undefined ? {} : { name: options.name }),
-          access: options.access,
           noOpen: !options.open,
           timeoutMs: options.timeout,
         });
@@ -240,7 +239,6 @@ export function createCommandHandlers(
           data: {
             site: result.profile.name,
             siteUrl: result.profile.siteUrl,
-            scope: result.scope,
             expiresAt: result.expiresAt,
           },
           meta: {
@@ -351,11 +349,10 @@ export function createCommandHandlers(
 
     upload: (localPath, remotePath, options) =>
       execute(options, async () => {
-        const { profile, lifecycle, abilities, meta } =
+        const { profile, abilities, meta } =
           await createAbilityContext(options);
         const result = await new CompositeUploader(
           profile,
-          lifecycle,
           abilities,
           http,
           options.timeout,
@@ -471,33 +468,26 @@ export function createCommandHandlers(
                   process.stdin.isTTY &&
                   process.stderr.isTTY
                     ? {
-                        confirmLogin: async (
-                          profile: SiteProfile,
-                          access: "read" | "full",
-                        ) => {
+                        confirmLogin: async (profile: SiteProfile) => {
                           const prompt = createInterface({
                             input: process.stdin,
                             output: process.stderr,
                           });
                           try {
                             const answer = await prompt.question(
-                              `OAuth login is required for ${profile.name} with ${access} access. Continue? [y/N] `,
+                              `OAuth login is required for ${profile.name}. Continue? [y/N] `,
                             );
                             return /^(y|yes)$/i.test(answer.trim());
                           } finally {
                             prompt.close();
                           }
                         },
-                        login: async (
-                          profile: SiteProfile,
-                          access: "read" | "full",
-                        ) => {
+                        login: async (profile: SiteProfile) => {
                           await (
                             await createLoginService(credentials)
                           ).login({
                             siteUrl: profile.siteUrl,
                             name: profile.name,
-                            access,
                             noOpen: false,
                             timeoutMs: options.timeout,
                           });

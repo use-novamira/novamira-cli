@@ -29,7 +29,7 @@ const resource = {
   resource: `${origin}/wp-json/mcp/novamira-oauth`,
   authorization_servers: [origin],
   bearer_methods_supported: ["header"],
-  scopes_supported: ["abilities:read", "abilities"],
+  scopes_supported: ["mcp"],
   novamira: {},
 };
 const authorization = {

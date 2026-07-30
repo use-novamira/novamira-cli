@@ -363,7 +363,6 @@ async function tokenCheck(
   );
   const evidence = {
     credentialState: local.credentialState,
-    access: local.access,
     expiresAt: local.expiresAt ?? null,
     publicClientConfigured: profile.clientId !== undefined,
   };
@@ -374,11 +373,7 @@ async function tokenCheck(
         "No local OAuth credentials are stored for the selected profile.",
       evidence,
     };
-  if (
-    local.credentialState === "expired" ||
-    local.access === "unknown" ||
-    profile.clientId === undefined
-  )
+  if (local.credentialState === "expired" || profile.clientId === undefined)
     return {
       status: "fail",
       summary: "The local OAuth token state is not coherent or usable.",

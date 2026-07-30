@@ -37,4 +37,4 @@ without changing anything, and `novamira update` installs it with the package
 manager that owns the installation. Set `NOVAMIRA_UPDATE_CHECK=0` to silence the
 automatic notice.
 
-Use `skill get` only for slugs advertised by discovery. Use `upload` only with an explicitly approved full grant; it performs a one-shot transfer and must not be retried after an ambiguous failure.
+Use `skill get` only for slugs advertised by discovery. Use `upload` only on an authorized site and with approval for the transfer; it performs a one-shot transfer and must not be retried after an ambiguous failure.

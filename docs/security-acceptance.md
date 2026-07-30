@@ -10,8 +10,8 @@ release gate.
 | Minimal direct dependencies, publish roots, and no lifecycle/native/runtime-download payload | `test/security-acceptance.test.mjs`; `bun run pack:inspect`; `scripts/package-acceptance.mjs` |
 | Root/subdirectory routing and direct/reverse-proxy authorization forwarding | plugin `tests/integration/RestOnlyContractTest.php`; `test/http-compatibility-contract.test.mjs` |
 | Unsupported WordPress, plugin, REST contract, or required features fail before authorization side effects | `test/http-compatibility-contract.test.mjs`; `test/oauth-login-contract.test.mjs` |
-| PKCE login, default full access, explicit readonly access, refresh rotation, revoke, and re-login | `test/security-acceptance.test.mjs`; `test/oauth-login-contract.test.mjs`; `test/token-lifecycle-contract.test.mjs` |
-| Readonly annotations, extension Ability grants, destructive confirmation, and capability removal after issuance | `test/security-acceptance.test.mjs`; plugin `tests/integration/RestOnlyContractTest.php`; `test/run-safety-contract.test.mjs` |
+| PKCE full-access login, legacy-scope migration, refresh rotation, revoke, and re-login | `test/security-acceptance.test.mjs`; `test/oauth-login-contract.test.mjs`; `test/token-lifecycle-contract.test.mjs` |
+| Readonly safety annotations, extension Ability access, destructive confirmation, and capability removal after issuance | `test/security-acceptance.test.mjs`; plugin `tests/integration/RestOnlyContractTest.php`; `test/run-safety-contract.test.mjs` |
 | Complete atomic discovery, live description, site context, and site skills | `test/security-acceptance.test.mjs`; `test/discovery-contract.test.mjs`; `test/site-skill-upload-contract.test.mjs` |
 | No arbitrary profile selection and no cross-profile/origin credential access | `test/state-contract.test.mjs`; `test/credentials-contract.test.mjs` |
 | Tokens excluded from argv, output diagnostics, profile metadata, and unintended endpoints | `test/security-acceptance.test.mjs`; `test/process-contract.test.mjs`; `test/credentials-contract.test.mjs`; `test/site-skill-upload-contract.test.mjs` |

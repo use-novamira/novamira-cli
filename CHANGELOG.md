@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Login now always grants full access, without access modes.
+
 ## 1.0.1
 
 ### Fixed

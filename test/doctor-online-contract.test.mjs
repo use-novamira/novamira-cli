@@ -30,7 +30,6 @@ const compatibility = {
   minimum_wordpress_version: "6.9",
   features: {
     abilities_bearer_auth: true,
-    abilities_read_scope: true,
     agent_context: true,
     rest_skills: true,
     generalized_execution_shim: true,
@@ -41,7 +40,7 @@ const resource = {
   resource: `${profile.siteUrl}/wp-json/mcp/novamira-oauth`,
   authorization_servers: [profile.siteUrl],
   bearer_methods_supported: ["header"],
-  scopes_supported: ["abilities:read", "abilities"],
+  scopes_supported: ["mcp"],
   novamira: compatibility,
 };
 
@@ -55,7 +54,7 @@ const authorization = {
   grant_types_supported: ["authorization_code", "refresh_token"],
   code_challenge_methods_supported: ["S256"],
   token_endpoint_auth_methods_supported: ["none"],
-  scopes_supported: ["abilities:read", "abilities"],
+  scopes_supported: ["mcp"],
 };
 
 const abilityNames = [
@@ -71,7 +70,6 @@ function dependencies(overrides = {}) {
     status: async () => ({
       site: profile.name,
       siteUrl: profile.siteUrl,
-      access: "read",
       credentialState: "fresh",
       expiresAt: "2026-07-21T13:00:00.000Z",
       restReachable: true,
@@ -106,7 +104,7 @@ function dependencies(overrides = {}) {
         version: 1,
         accessToken: "redacted-test-token",
         refreshToken: "redacted-test-refresh",
-        scope: "abilities:read",
+        scope: "mcp",
         expiresAt: "2026-07-21T13:00:00.000Z",
       }),
     },
@@ -192,7 +190,6 @@ test("online failures preserve unreachable, unauthorized, scope, missing, stale,
       status: async () => ({
         site: profile.name,
         siteUrl: profile.siteUrl,
-        access: "read",
         credentialState: "fresh",
         restReachable: false,
         restError: "auth_required",
@@ -258,7 +255,7 @@ test("online failures preserve unreachable, unauthorized, scope, missing, stale,
   );
 });
 
-test("login repair requires confirmation and never broadens the prior grant", async () => {
+test("login repair requires confirmation and uses the single full-access grant", async () => {
   const attempts = [];
   const denied = dependencies({
     dependencies: {
@@ -266,15 +263,15 @@ test("login repair requires confirmation and never broadens the prior grant", as
         diagnostic: () => ({ backend: "file", osBackedEncryption: false }),
         read: async () => undefined,
       },
-      confirmLogin: async (_profile, access) => {
-        attempts.push(["confirm", access]);
+      confirmLogin: async () => {
+        attempts.push(["confirm"]);
         return false;
       },
-      login: async (_profile, access) => attempts.push(["login", access]),
+      login: async () => attempts.push(["login"]),
     },
   });
   await checkOf(denied, "oauth.scope", { fix: true });
-  assert.deepEqual(attempts, [["confirm", "read"]]);
+  assert.deepEqual(attempts, [["confirm"]]);
 
   attempts.length = 0;
   const preserved = dependencies({
@@ -285,21 +282,18 @@ test("login repair requires confirmation and never broadens the prior grant", as
           version: 1,
           accessToken: "old",
           refreshToken: "old",
-          scope: "abilities",
+          scope: "mcp",
           expiresAt: "2026-07-21T11:00:00.000Z",
         }),
       },
-      confirmLogin: async (_profile, access) => {
-        attempts.push(["confirm", access]);
+      confirmLogin: async () => {
+        attempts.push(["confirm"]);
         return true;
       },
-      login: async (_profile, access) => attempts.push(["login", access]),
+      login: async () => attempts.push(["login"]),
     },
   });
   const fixed = await checkOf(preserved, "oauth.token", { fix: true });
   assert.equal(fixed.fixed, true);
-  assert.deepEqual(attempts, [
-    ["confirm", "full"],
-    ["login", "full"],
-  ]);
+  assert.deepEqual(attempts, [["confirm"], ["login"]]);
 });

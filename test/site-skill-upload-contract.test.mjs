@@ -91,7 +91,7 @@ test("site skills use the ordinary Ability path and retain missing, permission, 
   }
 });
 
-test("composite upload requires full scope and streams only the temporary credential", async () => {
+test("composite upload streams only the temporary credential", async () => {
   const root = await mkdtemp(join(tmpdir(), "novamira-upload-"));
   const local = join(root, "plugin.zip");
   const content = Buffer.from("streamed-binary-content");
@@ -99,7 +99,6 @@ test("composite upload requires full scope and streams only the temporary creden
   const requests = [];
   const diagnostics = [];
   const abilityCalls = [];
-  let scopeChecks = 0;
   const abilities = {
     async run(name, input, options) {
       abilityCalls.push({ name, input, options });
@@ -126,12 +125,6 @@ test("composite upload requires full scope and streams only the temporary creden
   });
   const uploader = new CompositeUploader(
     profile,
-    {
-      async requireScope(scope) {
-        scopeChecks += 1;
-        assert.equal(scope, "abilities");
-      },
-    },
     abilities,
     http,
     1_000,
@@ -150,7 +143,6 @@ test("composite upload requires full scope and streams only the temporary creden
       },
       warnings: [],
     });
-    assert.equal(scopeChecks, 1);
     assert.deepEqual(abilityCalls, [
       {
         name: UPLOAD_GRANT_ABILITY,
@@ -182,29 +174,6 @@ test("composite upload requires full scope and streams only the temporary creden
       JSON.stringify(diagnostics),
       /upload_url|authorization/i,
     );
-
-    let grantCreated = false;
-    const denied = new CompositeUploader(
-      profile,
-      {
-        async requireScope() {
-          throw new CliError("insufficient_scope", "full scope required");
-        },
-      },
-      {
-        async run() {
-          grantCreated = true;
-          return { data: grant(), warnings: [] };
-        },
-      },
-      http,
-      1_000,
-      () => now,
-    );
-    await assert.rejects(denied.upload(local, "remote.zip"), {
-      code: "insufficient_scope",
-    });
-    assert.equal(grantCreated, false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -214,7 +183,6 @@ test("upload rejects unsafe limits and grants and never retries an ambiguous str
   const root = await mkdtemp(join(tmpdir(), "novamira-upload-policy-"));
   const local = join(root, "payload.bin");
   await writeFile(local, "12345");
-  const scope = { requireScope: async () => undefined };
   let fetches = 0;
   const failingHttp = new HttpClient({
     fetch: async () => {
@@ -226,7 +194,6 @@ test("upload rejects unsafe limits and grants and never retries an ambiguous str
   const withGrant = (data, http = failingHttp) =>
     new CompositeUploader(
       profile,
-      scope,
       { run: async () => ({ data, warnings: [] }) },
       http,
       1_000,

@@ -18,7 +18,6 @@ export const COMPATIBILITY_CACHE_TTL_MS = 5 * 60 * 1000;
 export const MINIMUM_NOVAMIRA_VERSION = "1.11.0";
 export const REQUIRED_FEATURES = [
   "abilities_bearer_auth",
-  "abilities_read_scope",
   "agent_context",
   "rest_skills",
   "generalized_execution_shim",
@@ -361,8 +360,8 @@ function endpointString(value: unknown, origin: string, label: string): string {
 }
 
 function requireScopes(scopes: readonly string[]): void {
-  if (!scopes.includes("abilities:read") || !scopes.includes("abilities"))
-    throw unsupported("Required Ability OAuth scopes are unavailable.");
+  if (!scopes.includes("mcp"))
+    throw unsupported("The full-access OAuth scope is unavailable.");
 }
 
 function compareDotted(left: string, right: string): number {

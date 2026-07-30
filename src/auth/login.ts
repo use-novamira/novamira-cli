@@ -31,19 +31,15 @@ import { LoopbackCallbackFactory, type CallbackFactory } from "./loopback.js";
 import type { HttpClient } from "../rest/http-client.js";
 import { verifyLoginSurface } from "../rest/login-verification.js";
 
-export type LoginAccess = "read" | "full";
-
 export interface LoginOptions {
   readonly siteUrl: string;
   readonly name?: string;
-  readonly access: LoginAccess;
   readonly noOpen: boolean;
   readonly timeoutMs: number;
 }
 
 export interface LoginResult {
   readonly profile: SiteProfile;
-  readonly scope: "abilities:read" | "abilities";
   readonly expiresAt: string;
 }
 
@@ -103,8 +99,7 @@ export class LoginService {
       normalizedSite,
       protectedMetadata,
     );
-    const requestedScope =
-      options.access === "full" ? "abilities" : "abilities:read";
+    const requestedScope = "mcp";
     let clientId =
       existing?.siteUrl === normalizedSite && validClientId(existing.clientId)
         ? existing.clientId
@@ -206,7 +201,7 @@ export class LoginService {
           protectedMetadata,
           credential,
         );
-        return { profile, scope: requestedScope, expiresAt };
+        return { profile, expiresAt };
       } finally {
         await callback.close();
       }

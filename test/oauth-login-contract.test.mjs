@@ -53,7 +53,6 @@ const compatibility = {
   minimum_wordpress_version: "6.9",
   features: {
     abilities_bearer_auth: true,
-    abilities_read_scope: true,
     agent_context: true,
     rest_skills: true,
     generalized_execution_shim: true,
@@ -142,7 +141,7 @@ async function harness() {
         resource: "https://example.test/wp-json/mcp/novamira-oauth",
         authorization_servers: ["https://example.test"],
         bearer_methods_supported: ["header"],
-        scopes_supported: ["abilities:read", "abilities", "mcp"],
+        scopes_supported: ["mcp"],
         novamira: compatibility,
       });
     if (url.pathname.endsWith("/.well-known/oauth-authorization-server"))
@@ -159,7 +158,7 @@ async function harness() {
         grant_types_supported: ["authorization_code", "refresh_token"],
         code_challenge_methods_supported: ["S256"],
         token_endpoint_auth_methods_supported: ["none"],
-        scopes_supported: ["abilities:read", "abilities", "mcp"],
+        scopes_supported: ["mcp"],
       });
     if (url.pathname.endsWith("/oauth/register")) {
       registrations += 1;
@@ -268,7 +267,7 @@ async function harness() {
   };
 }
 
-test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, and persists exact grants", async () => {
+test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, and persists full access", async () => {
   let stderrOutput = "";
   new TerminalLoginInteraction((value) => {
     stderrOutput += value;
@@ -290,15 +289,12 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
       "https://example.test",
       "--name",
       "production",
-      "--access",
-      "read",
       "--no-open",
     ],
     { from: "user" },
   );
   assert.equal(parsed.url, "https://example.test");
   assert.equal(parsed.options.name, "production");
-  assert.equal(parsed.options.access, "read");
   assert.equal(parsed.options.open, false);
   assert.equal(parsed.options.timeout, 300_000);
 
@@ -314,7 +310,6 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
     { from: "user" },
   );
   assert.equal(parsed.options.timeout, 45_000);
-  assert.equal(parsed.options.access, "full");
 
   const authCommand = createProgram("test", commandHandlers()).commands.find(
     (command) => command.name() === "auth",
@@ -329,18 +324,17 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
 
   const current = await harness();
   try {
-    const read = await current.service.login({
+    const login = await current.service.login({
       siteUrl: "https://example.test",
       name: "production",
-      access: "read",
       noOpen: false,
       timeoutMs: 1000,
     });
-    assert.equal(read.scope, "abilities:read");
+    assert.equal(login.expiresAt, "2026-07-20T13:00:00.000Z");
     assert.deepEqual(current.counts(), { registrations: 1, tokenRequests: 1 });
     assert.equal(current.browserUrls.length, 1);
     const authorization = new URL(current.browserUrls[0]);
-    assert.equal(authorization.searchParams.get("scope"), "abilities:read");
+    assert.equal(authorization.searchParams.get("scope"), "mcp");
     assert.equal(
       authorization.searchParams.get("code_challenge_method"),
       "S256",
@@ -357,17 +351,15 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
           origin: "https://example.test",
         })
       ).scope,
-      "abilities:read",
+      "mcp",
     );
 
-    const full = await current.service.login({
+    await current.service.login({
       siteUrl: "https://example.test/",
       name: "production",
-      access: "full",
       noOpen: true,
       timeoutMs: 1000,
     });
-    assert.equal(full.scope, "abilities");
     assert.deepEqual(current.counts(), { registrations: 1, tokenRequests: 2 });
     assert.equal(current.shownUrls.length, 1);
 
@@ -375,7 +367,6 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
     await current.service.login({
       siteUrl: "https://example.test",
       name: "production",
-      access: "read",
       noOpen: true,
       timeoutMs: 1000,
     });
@@ -401,13 +392,12 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
   }
 });
 
-test("login fails closed on denial, scope narrowing, invalid callbacks, timeout, and unsupported preflight", async () => {
+test("login fails closed on denial, scope substitution, invalid callbacks, timeout, and unsupported preflight", async () => {
   const current = await harness();
   try {
     await current.service.login({
       siteUrl: "https://example.test",
       name: "production",
-      access: "read",
       noOpen: true,
       timeoutMs: 1000,
     });
@@ -420,7 +410,6 @@ test("login fails closed on denial, scope narrowing, invalid callbacks, timeout,
       current.service.login({
         siteUrl: "https://example.test",
         name: "production",
-        access: "full",
         noOpen: true,
         timeoutMs: 1000,
       }),
@@ -438,7 +427,6 @@ test("login fails closed on denial, scope narrowing, invalid callbacks, timeout,
       current.service.login({
         siteUrl: "https://example.test",
         name: "production",
-        access: "read",
         noOpen: true,
         timeoutMs: 1000,
       }),
@@ -512,7 +500,6 @@ test("login fails closed on denial, scope narrowing, invalid callbacks, timeout,
     await assert.rejects(
       unsupported.login({
         siteUrl: "https://example.test",
-        access: "read",
         noOpen: false,
         timeoutMs: 1000,
       }),

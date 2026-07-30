@@ -33,7 +33,6 @@ interface TokenResponse {
 export interface AuthStatus {
   readonly site: string;
   readonly siteUrl: string;
-  readonly access: "read" | "full" | "unknown" | null;
   readonly credentialState:
     "absent" | "invalid" | "fresh" | "near_expiry" | "expired";
   readonly expiresAt?: string;
@@ -42,7 +41,6 @@ export interface AuthStatus {
 }
 
 export interface LocalTokenStatus {
-  readonly access: "read" | "full" | "unknown" | null;
   readonly credentialState: "absent" | "fresh" | "near_expiry" | "expired";
   readonly expiresAt?: string;
 }
@@ -51,11 +49,9 @@ export function localTokenStatus(
   credential: CredentialRecord | undefined,
   now = Date.now(),
 ): LocalTokenStatus {
-  if (credential === undefined)
-    return { access: null, credentialState: "absent" };
+  if (credential === undefined) return { credentialState: "absent" };
   const expires = Date.parse(credential.expiresAt);
   return {
-    access: accessName(credential.scope),
     credentialState:
       expires <= now
         ? "expired"
@@ -97,15 +93,6 @@ export class TokenLifecycle implements AccessTokenProvider {
     const current = await this.requiredCredential();
     if (!this.needsRefresh(current)) return current.accessToken;
     return (await this.refresh(current.accessToken, false)).accessToken;
-  }
-
-  async requireScope(scope: "abilities"): Promise<void> {
-    const current = await this.requiredCredential();
-    if (current.scope !== scope) throw insufficientScope();
-    const usable = this.needsRefresh(current)
-      ? await this.refresh(current.accessToken, false)
-      : current;
-    if (usable.scope !== scope) throw insufficientScope();
   }
 
   async authenticatedJson<T = unknown>(
@@ -200,7 +187,6 @@ export class TokenLifecycle implements AccessTokenProvider {
     return {
       site: this.profile.name,
       siteUrl: this.profile.siteUrl,
-      access: accessName(credential.scope),
       credentialState,
       expiresAt: credential.expiresAt,
       restReachable,
@@ -279,7 +265,7 @@ export class TokenLifecycle implements AccessTokenProvider {
           resource,
           current,
         );
-        if (!scopePreservedOrNarrowed(current.scope, token.scope))
+        if (!scopeTransitionAllowed(current.scope, token.scope))
           throw invalidRefresh();
         const expiresAt = expiryFrom(token.expires_in, this.now());
         const replacement: CredentialRecord = {
@@ -312,7 +298,6 @@ export class TokenLifecycle implements AccessTokenProvider {
       client_id: this.profile.clientId,
       refresh_token: current.refreshToken,
       resource: resource.resource,
-      scope: current.scope,
     });
     const raw = await this.http.json({
       url: authorization.token_endpoint,
@@ -363,7 +348,6 @@ export class TokenLifecycle implements AccessTokenProvider {
     return {
       site: this.profile.name,
       siteUrl: this.profile.siteUrl,
-      access: null,
       credentialState: state,
       restReachable: null,
     };
@@ -412,13 +396,6 @@ function invalidRefresh(): CliError {
   return new CliError("auth_expired", "The OAuth refresh response is invalid.");
 }
 
-function insufficientScope(): CliError {
-  return new CliError(
-    "insufficient_scope",
-    "This operation requires an explicit full Ability grant; run novamira auth login --access full.",
-  );
-}
-
 function reauthorizationRequired(cause: unknown): CliError {
   return new CliError(
     "auth_expired",
@@ -432,18 +409,9 @@ function reauthorizationRequired(cause: unknown): CliError {
   );
 }
 
-function scopePreservedOrNarrowed(previous: string, next: string): boolean {
-  return (
-    (previous === "abilities" &&
-      ["abilities", "abilities:read"].includes(next)) ||
-    (previous === "abilities:read" && next === "abilities:read")
-  );
-}
-
-function accessName(scope: string): "read" | "full" | "unknown" {
-  if (scope === "abilities:read") return "read";
-  if (scope === "abilities") return "full";
-  return "unknown";
+function scopeTransitionAllowed(previous: string, next: string): boolean {
+  const fullAccessScopes = ["mcp", "abilities", "abilities:read"];
+  return fullAccessScopes.includes(previous) && fullAccessScopes.includes(next);
 }
 
 function isConfirmedUnauthorized(error: unknown): boolean {

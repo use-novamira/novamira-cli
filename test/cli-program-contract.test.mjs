@@ -29,10 +29,10 @@ test("the command tree routes named arguments and command-specific options", asy
   const cases = [
     { argv: ["--version"], name: "version", args: ["test"] },
     {
-      argv: ["auth", "login", "https://example.test", "--access", "read"],
+      argv: ["auth", "login", "https://example.test"],
       name: "authLogin",
       args: ["https://example.test"],
-      options: { access: "read", open: true, timeout: 300_000 },
+      options: { open: true, timeout: 300_000 },
     },
     { argv: ["auth", "status"], name: "authStatus", args: [] },
     { argv: ["auth", "logout"], name: "authLogout", args: [] },

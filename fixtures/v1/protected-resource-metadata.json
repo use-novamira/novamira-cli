@@ -7,8 +7,6 @@
     "header"
   ],
   "scopes_supported": [
-    "abilities:read",
-    "abilities",
     "mcp"
   ],
   "novamira": {
@@ -18,7 +16,6 @@
     "minimum_wordpress_version": "6.9",
     "features": {
       "abilities_bearer_auth": true,
-      "abilities_read_scope": true,
       "agent_context": true,
       "rest_skills": true,
       "generalized_execution_shim": true
