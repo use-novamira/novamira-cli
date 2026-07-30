@@ -24,7 +24,7 @@ const profile = {
 };
 
 const compatibility = {
-  plugin_version: "1.11.0",
+  plugin_version: "1.11.1",
   rest_api_version: 1,
   wordpress_version: "6.9.2",
   minimum_wordpress_version: "6.9",
@@ -162,7 +162,7 @@ test("online doctor keeps stable IDs and passes each complete remote surface", a
     const result = await definition.run();
     assert.equal(result.status, "pass", definition.id);
     if (definition.id === "server.plugin_version")
-      assert.equal(result.evidence.requiredVersion, "1.11.0");
+      assert.equal(result.evidence.requiredVersion, "1.11.1");
     assert.doesNotMatch(
       JSON.stringify(result),
       /redacted-test-(token|refresh)/,

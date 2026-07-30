@@ -15,7 +15,7 @@ import {
 import { compareSemver } from "../semver.js";
 
 export const COMPATIBILITY_CACHE_TTL_MS = 5 * 60 * 1000;
-export const MINIMUM_NOVAMIRA_VERSION = "1.11.0";
+export const MINIMUM_NOVAMIRA_VERSION = "1.11.1";
 export const REQUIRED_FEATURES = [
   "abilities_bearer_auth",
   "agent_context",

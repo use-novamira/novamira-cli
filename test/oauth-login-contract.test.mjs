@@ -47,7 +47,7 @@ function commandHandlers(overrides = {}) {
 }
 
 const compatibility = {
-  plugin_version: "1.11.0",
+  plugin_version: "1.11.1",
   rest_api_version: 1,
   wordpress_version: "6.9.2",
   minimum_wordpress_version: "6.9",

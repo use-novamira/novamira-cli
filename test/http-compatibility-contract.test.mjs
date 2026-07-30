@@ -295,7 +295,8 @@ test("metadata validation rejects origin attacks and compatibility matrix failur
     { ...supported, plugin_version: "1.9.9" },
     { ...supported, plugin_version: "1.10.1" },
     { ...supported, plugin_version: "1.10.2" },
-    { ...supported, plugin_version: "1.11.0-beta.1" },
+    { ...supported, plugin_version: "1.11.0" },
+    { ...supported, plugin_version: "1.11.1-beta.1" },
     { ...supported, rest_api_version: 2 },
     { ...supported, rest_api_version: undefined },
     ...REQUIRED_FEATURES.flatMap((feature) => [

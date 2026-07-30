@@ -14,7 +14,7 @@ const profile = {
 };
 
 const compatibility = {
-  plugin_version: "1.11.0",
+  plugin_version: "1.11.1",
   rest_api_version: 1,
   wordpress_version: "6.9.2",
   minimum_wordpress_version: "6.9",
@@ -155,7 +155,7 @@ test("discovery is complete and atomic while projecting compact records", async 
 
   for (const contextFailure of [
     new CliError("ability_not_found", "missing"),
-    { ...context, server: { ...compatibility, plugin_version: "1.11.1" } },
+    { ...context, server: { ...compatibility, plugin_version: "1.11.2" } },
   ]) {
     const failed = harness({
       pages: [{ data: [first], headers: { "x-wp-totalpages": "1" } }],

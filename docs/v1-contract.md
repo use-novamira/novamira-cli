@@ -24,15 +24,15 @@ The package has no lifecycle setup, downloaded runtime, required native executab
 
 ## Compatibility
 
-CLI 1.x supports exactly REST contract 1. The minimum server is WordPress 6.9 and Novamira 1.11.0.
+CLI 1.x supports exactly REST contract 1. The minimum server is WordPress 6.9 and Novamira 1.11.1.
 
 | CLI major | WordPress | Novamira | REST contract | Required features | Result |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `<6.9` | any | any | any | `server_unsupported` |
-| 1 | `>=6.9` | `<1.11.0` or missing | any | any | `server_unsupported` |
-| 1 | `>=6.9` | `>=1.11.0` | missing or not `1` | any | `server_unsupported` |
-| 1 | `>=6.9` | `>=1.11.0` | `1` | any required feature missing or not `true` | `server_unsupported` |
-| 1 | `>=6.9` | `>=1.11.0` | `1` | all `true` | supported |
+| 1 | `>=6.9` | `<1.11.1` or missing | any | any | `server_unsupported` |
+| 1 | `>=6.9` | `>=1.11.1` | missing or not `1` | any | `server_unsupported` |
+| 1 | `>=6.9` | `>=1.11.1` | `1` | any required feature missing or not `true` | `server_unsupported` |
+| 1 | `>=6.9` | `>=1.11.1` | `1` | all `true` | supported |
 | other | any | any | any | any | unsupported until that CLI major publishes its matrix |
 
 The required feature keys are fixed:

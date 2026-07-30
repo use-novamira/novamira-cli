@@ -39,7 +39,7 @@ const { HttpClient } = await import(new URL("rest/http-client.js", distRoot));
 const { getSiteSkill } = await import(new URL("skills/client.js", distRoot));
 
 const compatibility = {
-  plugin_version: "1.11.0",
+  plugin_version: "1.11.1",
   rest_api_version: 1,
   wordpress_version: "6.9.2",
   minimum_wordpress_version: "6.9",

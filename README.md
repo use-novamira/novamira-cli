@@ -9,7 +9,7 @@ bundled agent guidance.
 ## Requirements
 
 - Node.js 22 or newer
-- A compatible WordPress 6.9+ site with Novamira 1.11.0+
+- A compatible WordPress 6.9+ site with Novamira 1.11.1+
 
 CLI 1.x supports REST contract 1 only. Older WordPress or Novamira releases,
 or a server missing any required REST feature, fail as `server_unsupported`
@@ -54,7 +54,7 @@ changes a command's exit code; `NOVAMIRA_UPDATE_CHECK=0` disables it. See
 Reinstall the agent skill separately after a major upgrade if bundled guidance
 changed.
 
-Before upgrading, update the site to WordPress 6.9+ and Novamira 1.11.0+, then
+Before upgrading, update the site to WordPress 6.9+ and Novamira 1.11.1+, then
 run `novamira --site <profile> doctor --json`. Re-run doctor after upgrading the
 CLI. Profiles, grants, and caches are versioned independently; do not copy token
 material between installations. Every 1.x release uses the same package and

@@ -5,6 +5,7 @@
 ### Changed
 
 - Login now always grants full access, without access modes.
+- The minimum compatible Novamira server version is now 1.11.1.
 
 ## 1.0.1
 
