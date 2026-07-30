@@ -37,7 +37,8 @@ try {
     temporary,
   );
   const packed = run(npm, packArguments, root);
-  const [manifest] = JSON.parse(packed.stdout);
+  const packResult = JSON.parse(packed.stdout);
+  const manifest = Array.isArray(packResult) ? packResult[0] : packResult;
   assert.equal(manifest.name, "@novamira/cli");
   assert.equal(manifest.version, "1.0.2");
   assert.equal(
