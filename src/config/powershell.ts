@@ -36,3 +36,14 @@ export function powerShellLiteral(value: string): string {
     throw new Error("value contains characters that cannot be quoted safely");
   return `'${value.replaceAll("'", "''")}'`;
 }
+
+// Batch inputs are delivered on stdin, one record per line, because Windows
+// caps a command line near 32k characters and a hundred storage paths would
+// not fit. Nothing quotes them, so only the line separators are dangerous: a
+// carriage return or line feed would split one record into two. Reject both,
+// exactly as `powerShellLiteral` does.
+export function powerShellStdinLine(value: string): string {
+  if (/[\r\n]/.test(value))
+    throw new Error("value contains characters that cannot be sent safely");
+  return value;
+}

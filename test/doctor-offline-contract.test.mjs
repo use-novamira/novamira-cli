@@ -9,6 +9,7 @@ import {
   readFile,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import net from "node:net";
@@ -62,13 +63,103 @@ function fakeDependencies(root, overrides = {}) {
   };
 }
 
-async function statusOf(dependencies, id, options = {}) {
+async function runCheck(dependencies, id, options = {}) {
   const definition = offlineDoctorDefinitions(dependencies, {
     fix: false,
     ...options,
   }).find((candidate) => candidate.id === id);
   assert.ok(definition);
-  return (await definition.run()).status;
+  return definition.run();
+}
+
+async function statusOf(dependencies, id, options = {}) {
+  return (await runCheck(dependencies, id, options)).status;
+}
+
+// Records how the doctor asks about ACLs. `single` must stay zero: one helper
+// process per target is exactly the Windows regression this guards against.
+function countingSecurity(inner = new UnixFileSecurity()) {
+  const calls = { single: 0, verifyMany: [], secureMany: [] };
+  return {
+    calls,
+    security: {
+      verifyDirectory: async (path) => {
+        calls.single += 1;
+        return inner.verifyDirectory(path);
+      },
+      verifyFile: async (path) => {
+        calls.single += 1;
+        return inner.verifyFile(path);
+      },
+      secureDirectory: async (path) => {
+        calls.single += 1;
+        return inner.secureDirectory(path);
+      },
+      secureFile: async (path) => {
+        calls.single += 1;
+        return inner.secureFile(path);
+      },
+      verifyMany: async (targets) => {
+        calls.verifyMany.push(targets.map(({ path }) => path));
+        return inner.verifyMany(targets);
+      },
+      secureMany: async (targets) => {
+        calls.secureMany.push(targets.map(({ path }) => path));
+        return inner.secureMany(targets);
+      },
+    },
+  };
+}
+
+const HEX_A = "a".repeat(64);
+const HEX_B = "b".repeat(64);
+
+// One tree holding every classification the permission check distinguishes:
+// safe, unsafe-but-fixable, symlinked, wrong node type, and missing.
+async function mixedPermissionTree(root) {
+  const paths = platformPaths({ NOVAMIRA_HOME: root }, "linux", root);
+  const locks = join(paths.stateDir, "locks");
+  const credentialsV1 = join(paths.credentialsDir, "v1");
+  const credentialsReal = join(paths.credentialsDir, "v1-real");
+  const abilities = join(paths.cacheDir, "abilities", "v1");
+
+  await mkdir(locks, { recursive: true, mode: 0o700 });
+  await mkdir(credentialsReal, { recursive: true, mode: 0o700 });
+  await mkdir(abilities, { recursive: true, mode: 0o700 });
+  // A symlinked directory still lists its contents but can never be hardened
+  // in place, so it must be unsafe and unfixable.
+  await symlink(credentialsReal, credentialsV1);
+  // cache/artifacts/v1 is deliberately absent: a missing target is omitted
+  // entirely rather than reported unsafe.
+  await chmod(abilities, 0o755);
+  await writeFile(paths.configFile, "{}", { mode: 0o600 });
+  // A directory carrying a lock-file name is the wrong node type.
+  await mkdir(join(locks, `${HEX_A}.lock`), { mode: 0o700 });
+  await writeFile(join(locks, `${HEX_B}.lock`), "{}", { mode: 0o600 });
+  await writeFile(join(credentialsReal, `${HEX_A}.json`), "{}", {
+    mode: 0o644,
+  });
+  await writeFile(join(abilities, `${HEX_A}.json`), "{}", { mode: 0o600 });
+
+  return {
+    paths,
+    // Every well-typed target, in the contractual inspection order.
+    verifiable: [
+      root,
+      paths.stateDir,
+      locks,
+      paths.credentialsDir,
+      paths.cacheDir,
+      abilities,
+      paths.configFile,
+      join(locks, `${HEX_B}.lock`),
+      join(credentialsV1, `${HEX_A}.json`),
+      join(abilities, `${HEX_A}.json`),
+    ],
+    repairable: [abilities, join(credentialsV1, `${HEX_A}.json`)],
+    abilities,
+    credentialFile: join(credentialsV1, `${HEX_A}.json`),
+  };
 }
 
 test("offline check IDs are stable and local pass, warn, and fail states remain distinct", async () => {
@@ -344,6 +435,273 @@ test("offline fixes are idempotent, bounded, owner-only, and never use network o
   } finally {
     globalThis.fetch = originalFetch;
     net.Socket.prototype.connect = originalConnect;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("permission targets keep their order and classification behind a single batched ACL check", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-doctor-batch-"));
+  try {
+    const tree = await mixedPermissionTree(root);
+    const { calls, security } = countingSecurity();
+    const result = await runCheck(
+      fakeDependencies(root, { security }),
+      "storage.permissions",
+    );
+
+    // One helper process for every target, not one per target.
+    assert.equal(calls.verifyMany.length, 1);
+    assert.equal(calls.single, 0);
+    assert.equal(calls.secureMany.length, 0);
+    assert.deepEqual(calls.verifyMany[0], tree.verifiable);
+
+    assert.equal(result.status, "fail");
+    assert.equal(result.fixed, undefined);
+    // Twelve inspected targets: the missing artifacts directory and its empty
+    // file group are omitted rather than reported.
+    assert.equal(result.evidence.inspected, 12);
+    assert.deepEqual(result.evidence.unsafe, [
+      "cache.abilities.directory",
+      "credentials.file",
+      "credentials.v1.directory",
+      "locks.file",
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("permission repair hardens every fixable target in one pass and re-verifies in one more", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-doctor-batch-fix-"));
+  try {
+    const tree = await mixedPermissionTree(root);
+    const { calls, security } = countingSecurity();
+    const result = await runCheck(
+      fakeDependencies(root, { security }),
+      "storage.permissions",
+      { fix: true },
+    );
+
+    // Verify, repair, verify again: three helper processes regardless of how
+    // many targets are involved.
+    assert.equal(calls.secureMany.length, 1);
+    assert.deepEqual(calls.secureMany[0], tree.repairable);
+    assert.equal(calls.verifyMany.length, 2);
+    assert.equal(calls.single, 0);
+
+    assert.equal((await stat(tree.abilities)).mode & 0o777, 0o700);
+    assert.equal((await stat(tree.credentialFile)).mode & 0o777, 0o600);
+
+    assert.equal(result.fixed, true);
+    assert.equal(result.status, "fail");
+    // The symlinked directory and the wrongly typed lock survive the repair
+    // because neither is fixable.
+    assert.deepEqual(result.evidence.unsafe, [
+      "credentials.v1.directory",
+      "locks.file",
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ACL inspection cost stays bounded as the number of cached files grows", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-doctor-bounded-"));
+  try {
+    const paths = platformPaths({ NOVAMIRA_HOME: root }, "linux", root);
+    const artifacts = join(paths.cacheDir, "artifacts", "v1");
+    await mkdir(join(paths.stateDir, "locks"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await mkdir(join(paths.credentialsDir, "v1"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await mkdir(join(paths.cacheDir, "abilities", "v1"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await mkdir(artifacts, { recursive: true, mode: 0o700 });
+    await writeFile(paths.configFile, "{}", { mode: 0o600 });
+    for (let index = 0; index < 30; index += 1)
+      await writeFile(
+        join(
+          artifacts,
+          `${String(1700000000000 + index)}-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json`,
+        ),
+        "{}",
+        { mode: 0o600 },
+      );
+
+    const { calls, security } = countingSecurity();
+    const result = await runCheck(
+      fakeDependencies(root, { security }),
+      "storage.permissions",
+    );
+
+    assert.equal(result.status, "pass");
+    // Eight directories, the config file, and thirty artifacts.
+    assert.equal(result.evidence.inspected, 39);
+    assert.equal(calls.single, 0);
+    assert.equal(calls.verifyMany.length, 1);
+    assert.equal(calls.verifyMany[0].length, result.evidence.inspected);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a failing ACL checker leaves every inspected target unsafe and unrepairable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-doctor-acl-broken-"));
+  try {
+    const paths = platformPaths({ NOVAMIRA_HOME: root }, "linux", root);
+    await mkdir(paths.stateDir, { recursive: true, mode: 0o700 });
+    await writeFile(paths.configFile, "{}", { mode: 0o600 });
+    const { calls, security } = countingSecurity();
+    const result = await runCheck(
+      fakeDependencies(root, {
+        security: {
+          ...security,
+          verifyMany: async (targets) => {
+            calls.verifyMany.push(targets.map(({ path }) => path));
+            throw new Error("powershell.exe exited with status 1");
+          },
+        },
+      }),
+      "storage.permissions",
+      { fix: true },
+    );
+
+    assert.equal(calls.verifyMany.length, 1);
+    assert.equal(calls.single, 0);
+    // Nothing is fixable while the checker cannot prove a postcondition, so
+    // no repair is attempted and the check reports rather than throws.
+    assert.equal(calls.secureMany.length, 0);
+    assert.equal(result.status, "fail");
+    assert.equal(result.fixed, undefined);
+    assert.deepEqual(result.evidence.unsafe, [
+      "config.directory",
+      "config.file",
+      "state.directory",
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a target that disappears during --fix does not fail the whole repair", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-doctor-fix-vanish-"));
+  try {
+    const paths = platformPaths({ NOVAMIRA_HOME: root }, "linux", root);
+    const locks = join(paths.stateDir, "locks");
+    await mkdir(locks, { recursive: true, mode: 0o700 });
+    await mkdir(join(paths.credentialsDir, "v1"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await mkdir(join(paths.cacheDir, "abilities", "v1"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await mkdir(join(paths.cacheDir, "artifacts", "v1"), {
+      recursive: true,
+      mode: 0o700,
+    });
+
+    // Two repairable targets: a world-readable config file and a lock file
+    // that another process removes while the repair is in flight.
+    await writeFile(paths.configFile, "{}", { mode: 0o644 });
+    const lock = join(locks, `${HEX_A}.lock`);
+    await writeFile(lock, "{}", { mode: 0o644 });
+
+    // `secureMany` fails the whole batch when a target cannot be proved
+    // owner-only afterwards, and a vanished path cannot be. Reporting that as
+    // `check_threw` would turn an ordinary race into a broken doctor run.
+    const inner = new UnixFileSecurity();
+    const racing = {
+      ...inner,
+      verifyDirectory: (path) => inner.verifyDirectory(path),
+      verifyFile: (path) => inner.verifyFile(path),
+      secureDirectory: (path) => inner.secureDirectory(path),
+      secureFile: (path) => inner.secureFile(path),
+      verifyMany: (targets) => inner.verifyMany(targets),
+      secureMany: async (targets) => {
+        await rm(lock, { force: true });
+        return inner.secureMany(targets);
+      },
+    };
+    const result = await runCheck(
+      fakeDependencies(root, { security: racing }),
+      "storage.permissions",
+      { fix: true },
+    );
+
+    // The config file was still repaired, and the run reports a repair rather
+    // than a thrown check.
+    assert.equal(result.status, "pass");
+    assert.equal(result.fixed, true);
+    assert.deepEqual(result.evidence.unsafe, []);
+    assert.notEqual(result.evidence.error, "check_threw");
+    assert.equal(
+      await new UnixFileSecurity().verifyFile(paths.configFile),
+      true,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a target that disappears during the batched check is omitted, not condemned", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-doctor-vanish-"));
+  try {
+    const paths = platformPaths({ NOVAMIRA_HOME: root }, "linux", root);
+    const locks = join(paths.stateDir, "locks");
+    await mkdir(locks, { recursive: true, mode: 0o700 });
+    await mkdir(join(paths.credentialsDir, "v1"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await mkdir(join(paths.cacheDir, "abilities", "v1"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await mkdir(join(paths.cacheDir, "artifacts", "v1"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await writeFile(paths.configFile, "{}", { mode: 0o600 });
+    const lock = join(locks, `${HEX_A}.lock`);
+    await writeFile(lock, "{}", { mode: 0o600 });
+
+    // Any second `novamira` process creates and releases a lock file within
+    // milliseconds. Batching widened the gap between the `lstat` pass and the
+    // ACL verdict to a whole PowerShell round trip, and a path the checker
+    // cannot read answers `false`; reporting that as unsafe would fail a
+    // correctly hardened installation.
+    const inner = new UnixFileSecurity();
+    const racing = {
+      ...inner,
+      verifyDirectory: (path) => inner.verifyDirectory(path),
+      verifyFile: (path) => inner.verifyFile(path),
+      secureDirectory: (path) => inner.secureDirectory(path),
+      secureFile: (path) => inner.secureFile(path),
+      secureMany: (targets) => inner.secureMany(targets),
+      verifyMany: async (targets) => {
+        await rm(lock, { force: true });
+        return inner.verifyMany(targets);
+      },
+    };
+    const result = await runCheck(
+      fakeDependencies(root, { security: racing }),
+      "storage.permissions",
+    );
+
+    assert.equal(result.status, "pass");
+    assert.deepEqual(result.evidence.unsafe, []);
+    // Eight directories and the config file; the lock is gone, so it is no
+    // longer a target at all.
+    assert.equal(result.evidence.inspected, 9);
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

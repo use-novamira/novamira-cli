@@ -9,6 +9,20 @@
 - File-editing refusals such as identical strings, missing matches, and multiple
   matches now report a non-retryable validation error instead of an internal
   error.
+- `discover` no longer stalls on sites with many Abilities; the whole discovery
+  is cached in one batch.
+- Windows: `doctor` inspects and repairs permissions in one helper process
+  instead of one per target.
+- Windows: hardening no longer fails when `Set-Acl` reports a missing
+  `SeSecurityPrivilege` but the permissions are already correct.
+- Windows: interrupted commands no longer leave `powershell.exe` running.
+- Windows: paths that are not plain ASCII, such as `C:\Users\José`, are hardened
+  and verified correctly.
+- The Ability cache stays within its size budget during a large discovery and
+  reclaims abandoned temporary files.
+- `doctor` no longer fails when another `novamira` process removes a lock file
+  mid-check.
+- A discovery that fails part way keeps the records it already refreshed.
 
 ## 1.0.2
 

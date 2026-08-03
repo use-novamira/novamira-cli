@@ -2,13 +2,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from "node:assert/strict";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import {
+  chmod,
+  mkdir,
+  readdir,
+  readFile,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
-import { atomicWriteFile } from "../dist/config/atomic-write.js";
 import {
+  atomicWriteFile,
+  atomicWriteFiles,
+} from "../dist/config/atomic-write.js";
+import {
+  SpawnCommandRunner,
   UnixFileSecurity,
   WindowsFileSecurity,
 } from "../dist/config/file-security.js";
@@ -263,6 +275,21 @@ test("locks coordinate independent managers, stale owners recover, and failed at
     );
     assert.ok(calls[0][1][5].includes("$path='C:\\State'"));
 
+    // `Set-Acl` over a freshly constructed security object marks every section
+    // dirty, so Windows demands SeSecurityPrivilege for the SACL and refuses
+    // the write on ordinary accounts even when the resulting DACL would be
+    // correct. The script must mutate the object `Get-Acl` returned, and must
+    // let the verification below decide, rather than raising the Set-Acl error.
+    const applyScript = calls[0][1][5];
+    assert.ok(applyScript.includes("$acl=Get-Acl -LiteralPath $path"));
+    assert.ok(!applyScript.includes("DirectorySecurity]::new()"));
+    assert.ok(!applyScript.includes("FileSecurity]::new()"));
+    assert.ok(
+      applyScript.includes("$acl.SetAccessRuleProtection($true,$false)"),
+    );
+    assert.ok(applyScript.includes("$acl.PurgeAccessRules("));
+    assert.ok(applyScript.includes("catch{$applyError=$_.Exception.Message}"));
+
     const unsafe = new WindowsFileSecurity({ run: async () => 3 });
     assert.equal(await unsafe.verifyDirectory("C:\\State"), false);
     assert.equal(await unsafe.verifyFile("C:\\State\\config.json"), false);
@@ -294,5 +321,347 @@ test("locks coordinate independent managers, stale owners recover, and failed at
     assert.ok(quoted[0].includes("$path='C:\\State\\o''brien.json'"));
   } finally {
     await rm(state.root, { recursive: true, force: true });
+  }
+});
+
+test("a batch that fails part way keeps the records it already replaced", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-batch-write-"));
+  try {
+    const security = new UnixFileSecurity();
+    const path = (name) => join(root, name);
+
+    // Two destinations already hold valid content; the third is new.
+    await writeFile(path("one.json"), "old-one", { mode: 0o600 });
+    await writeFile(path("two.json"), "old-two", { mode: 0o600 });
+
+    // A directory cannot be replaced by renaming a file over it, so the third
+    // entry fails after the first two have already been committed.
+    await mkdir(path("three.json"), { mode: 0o700 });
+
+    await assert.rejects(
+      atomicWriteFiles(
+        [
+          { path: path("one.json"), content: "new-one" },
+          { path: path("two.json"), content: "new-two" },
+          { path: path("three.json"), content: "new-three" },
+        ],
+        security,
+      ),
+    );
+
+    // The refreshed records survive the failure. Unlinking them here would
+    // destroy content that was valid before the batch started.
+    assert.equal(await readFile(path("one.json"), "utf8"), "new-one");
+    assert.equal(await readFile(path("two.json"), "utf8"), "new-two");
+    assert.equal(await security.verifyFile(path("one.json")), true);
+    assert.equal(await security.verifyFile(path("two.json")), true);
+
+    // No temporary is left behind for the entry that never landed.
+    const leftovers = (await readdir(root)).filter((name) =>
+      name.endsWith(".tmp"),
+    );
+    assert.deepEqual(leftovers, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a failed Set-Acl succeeds only when the postcondition verifies as safe", async () => {
+  // Windows reports a missing SeSecurityPrivilege even when the owner-only ACL
+  // it was asked to write is already in place.
+  const scripts = [];
+  const rescued = new WindowsFileSecurity({
+    run: async (_command, args) => {
+      scripts.push(args[5]);
+      return /\$action='apply'/.test(args[5]) ? 1 : 0;
+    },
+    runWithInput: async () => {
+      throw new Error("the single-path methods must not batch");
+    },
+  });
+  await rescued.secureDirectory("C:\\State");
+  assert.equal(scripts.length, 2);
+  assert.ok(/\$action='verify'/.test(scripts[1]));
+  assert.ok(/\$directory=\$true/.test(scripts[1]));
+
+  // An unverified postcondition is never rescued, whatever Windows reported.
+  const unsafe = new WindowsFileSecurity({
+    run: async (_command, args) => (/\$action='apply'/.test(args[5]) ? 1 : 3),
+    runWithInput: async () => {
+      throw new Error("the single-path methods must not batch");
+    },
+  });
+  await assert.rejects(unsafe.secureFile("C:\\State\\config.json"), /status 1/);
+
+  const unreadable = new WindowsFileSecurity({
+    run: async () => 1,
+    runWithInput: async () => {
+      throw new Error("the single-path methods must not batch");
+    },
+  });
+  await assert.rejects(unreadable.secureDirectory("C:\\State"), /status 1/);
+});
+
+test("batched ACL checks answer per target, in order, without inlining paths", async () => {
+  const targets = [
+    { path: "C:\\State", kind: "directory" },
+    { path: "C:\\State\\missing.json", kind: "file" },
+    { path: "C:\\State\\config.json", kind: "file" },
+  ];
+  const batchOnly = {
+    run: async () => {
+      throw new Error("a batch must not fall back to one process per path");
+    },
+  };
+
+  const batched = [];
+  const security = new WindowsFileSecurity({
+    ...batchOnly,
+    runWithInput: async (command, args, input) => {
+      batched.push([command, args, input]);
+      // The middle target cannot be read; that is a `false`, not an abort.
+      return { code: 0, stdout: "safe\nunsafe\nsafe\n" };
+    },
+  });
+  assert.deepEqual(await security.verifyMany(targets), [true, false, true]);
+  assert.equal(batched.length, 1);
+  const [command, args, input] = batched[0];
+  assert.equal(command, "powershell.exe");
+  assert.deepEqual(args.slice(0, 5), [
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+  ]);
+  assert.equal(args.length, 6);
+  // Windows caps a command line near 32k characters, so a hundred storage
+  // paths cannot be inlined; they arrive on stdin as `<kind><path>` lines.
+  for (const target of targets) assert.ok(!args[5].includes(target.path));
+  // Node writes the payload as UTF-8, but `[Console]::In` decodes with the
+  // console code page, which turns `C:\Users\José` into a path that does not
+  // exist. The reader must name its encoding.
+  assert.ok(!args[5].includes("[Console]::In"));
+  assert.ok(
+    args[5].includes(
+      "[System.IO.StreamReader]::new([Console]::OpenStandardInput(),[System.Text.UTF8Encoding]::new($false))",
+    ),
+  );
+  assert.ok(args[5].includes("$action='verify'"));
+  assert.equal(
+    input,
+    "dC:\\State\nfC:\\State\\missing.json\nfC:\\State\\config.json\n",
+  );
+
+  // A non-ASCII path survives to stdin unchanged; nothing quotes or transcodes
+  // it on the way out.
+  const accented = [];
+  const unicode = new WindowsFileSecurity({
+    ...batchOnly,
+    runWithInput: async (_command, _args, payload) => {
+      accented.push(payload);
+      return { code: 0, stdout: "safe\n" };
+    },
+  });
+  await unicode.secureMany([
+    { path: "C:\\Users\\José\\AppData\\Local\\Novamira\\Cache", kind: "file" },
+  ]);
+  assert.equal(
+    accented[0],
+    "fC:\\Users\\José\\AppData\\Local\\Novamira\\Cache\n",
+  );
+
+  // A newline would split one target into two verdicts.
+  await assert.rejects(
+    security.verifyMany([{ path: "C:\\State\nC:\\Windows", kind: "file" }]),
+  );
+
+  // An empty batch inspects nothing and starts nothing.
+  const idle = new WindowsFileSecurity({
+    ...batchOnly,
+    runWithInput: async () => {
+      throw new Error("an empty batch must not spawn");
+    },
+  });
+  assert.deepEqual(await idle.verifyMany([]), []);
+  await idle.secureMany([]);
+
+  // Results that cannot be matched to inputs are a failure of the checker.
+  for (const stdout of ["safe\n", "safe\n\nsafe\n", "safe\nmaybe\nsafe\n"]) {
+    const garbled = new WindowsFileSecurity({
+      ...batchOnly,
+      runWithInput: async () => ({ code: 0, stdout }),
+    });
+    await assert.rejects(garbled.verifyMany(targets));
+  }
+  const failed = new WindowsFileSecurity({
+    ...batchOnly,
+    runWithInput: async () => ({ code: 1, stdout: "" }),
+  });
+  await assert.rejects(failed.verifyMany(targets), /status 1/);
+
+  // A batched apply reports the postcondition of every target.
+  const applied = [];
+  const applier = new WindowsFileSecurity({
+    ...batchOnly,
+    runWithInput: async (_command, args, input) => {
+      applied.push([args[5], input]);
+      return { code: 0, stdout: "safe\nsafe\n" };
+    },
+  });
+  await applier.secureMany(targets.slice(0, 2));
+  assert.ok(applied[0][0].includes("$action='apply'"));
+  assert.equal(applied[0][1], "dC:\\State\nfC:\\State\\missing.json\n");
+
+  const stubborn = new WindowsFileSecurity({
+    ...batchOnly,
+    runWithInput: async () => ({ code: 0, stdout: "safe\nunsafe\n" }),
+  });
+  await assert.rejects(stubborn.secureMany(targets.slice(0, 2)), /1 of 2/);
+});
+
+test("unix batched ACL checks mirror the single-path verdicts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-acl-"));
+  try {
+    const security = new UnixFileSecurity();
+    const directory = join(root, "state");
+    const file = join(directory, "config.json");
+    const loose = join(root, "loose.json");
+    await mkdir(directory, { recursive: true });
+    await writeFile(file, "{}");
+    await writeFile(loose, "{}");
+    // Explicit modes: the process umask would otherwise decide the fixture.
+    await chmod(directory, 0o755);
+    await chmod(file, 0o644);
+    await chmod(loose, 0o600);
+    const targets = [
+      { path: directory, kind: "directory" },
+      { path: file, kind: "file" },
+      { path: loose, kind: "file" },
+      { path: join(root, "absent.json"), kind: "file" },
+    ];
+    // A target that cannot be inspected is `false`, not a rejection.
+    assert.deepEqual(await security.verifyMany(targets), [
+      false,
+      false,
+      true,
+      false,
+    ]);
+    assert.deepEqual(await security.verifyMany([]), []);
+    await security.secureMany(targets.slice(0, 3));
+    assert.deepEqual(await security.verifyMany(targets), [
+      true,
+      true,
+      true,
+      false,
+    ]);
+    await assert.rejects(security.secureMany(targets.slice(3)));
+
+    // The batch contract is the same on both platforms: every target is
+    // hardened before anything is reported, and the postcondition decides. One
+    // unrepairable target must not leave the rest of the batch untouched, and
+    // a `chmod` that silently changed nothing must not pass for a success.
+    await chmod(directory, 0o755);
+    await chmod(file, 0o644);
+    await assert.rejects(
+      security.secureMany([
+        { path: join(root, "absent.json"), kind: "file" },
+        { path: directory, kind: "directory" },
+        { path: file, kind: "file" },
+      ]),
+      /1 of 3/,
+    );
+    assert.deepEqual(
+      await security.verifyMany([
+        { path: directory, kind: "directory" },
+        { path: file, kind: "file" },
+      ]),
+      [true, true],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the spawn runner delivers stdin, captures stdout, and bounds its own runtime", async () => {
+  const runner = new SpawnCommandRunner(30_000);
+  assert.deepEqual(
+    await runner.runWithInput(
+      process.execPath,
+      ["-e", "process.stdin.pipe(process.stdout)"],
+      "dC:\\State\nfC:\\State\\config.json\n",
+    ),
+    { code: 0, stdout: "dC:\\State\nfC:\\State\\config.json\n" },
+  );
+  assert.equal(
+    await runner.run(process.execPath, ["-e", "process.exit(3)"]),
+    3,
+  );
+
+  // An interrupted or wedged helper must never outlive the call that started
+  // it: the timeout kills the child and rejects.
+  const impatient = new SpawnCommandRunner(50);
+  await assert.rejects(
+    impatient.run(process.execPath, ["-e", "setTimeout(() => {}, 30000)"]),
+    /timed out after 50 ms/,
+  );
+  await assert.rejects(
+    impatient.runWithInput(
+      process.execPath,
+      ["-e", "setTimeout(() => {}, 30000)"],
+      "",
+    ),
+    /timed out after 50 ms/,
+  );
+});
+
+test("Ctrl-C kills the ACL helper the CLI started", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-signal-"));
+  try {
+    const marker = join(root, "helper.pid");
+    // The helper stands in for powershell.exe: it records its own pid and then
+    // does nothing, exactly like a batch ACL pass that has not answered yet.
+    const helper = `require("node:fs").writeFileSync(${JSON.stringify(marker)}, String(process.pid)); setInterval(() => {}, 1000);`;
+    // Node does not emit `exit` when a default-handled signal terminates the
+    // process, and the helper is started with `windowsHide`, so it is not on
+    // the parent's console and never receives a console Ctrl-C of its own.
+    // Only an explicit signal listener can reach it.
+    const driver = `
+      const { SpawnCommandRunner } = await import(${JSON.stringify(new URL("../dist/config/file-security.js", import.meta.url).href)});
+      new SpawnCommandRunner(600000)
+        .runWithInput(process.execPath, ["-e", ${JSON.stringify(helper)}], "")
+        .catch(() => undefined);
+      setInterval(() => {}, 1000);
+    `;
+    const cli = spawn(process.execPath, ["--input-type=module", "-e", driver], {
+      stdio: "ignore",
+    });
+    let helperPid;
+    for (let attempt = 0; attempt < 200 && helperPid === undefined; attempt++) {
+      try {
+        helperPid = Number(await readFile(marker, "utf8"));
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    assert.ok(helperPid !== undefined && Number.isInteger(helperPid));
+
+    cli.kill("SIGINT");
+    await new Promise((resolve) => {
+      cli.once("close", resolve);
+    });
+
+    let alive = true;
+    for (let attempt = 0; attempt < 200 && alive; attempt++) {
+      try {
+        process.kill(helperPid, 0);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      } catch {
+        alive = false;
+      }
+    }
+    assert.equal(alive, false, "the helper outlived the cancelled CLI");
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

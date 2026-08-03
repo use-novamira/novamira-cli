@@ -2,8 +2,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { AbilityClient, ABILITY_PAGE_SIZE } from "../dist/abilities/client.js";
+import { AbilityMetadataCache } from "../dist/cache/ability-cache.js";
+import { UnixFileSecurity } from "../dist/config/file-security.js";
+import { ProfileLockManager } from "../dist/config/lock.js";
+import { platformPaths } from "../dist/config/paths.js";
 import { CliError } from "../dist/errors.js";
 import { writeHumanAbilityDescription } from "../dist/output/render.js";
 
@@ -61,9 +68,10 @@ function record(name, extra = {}) {
   };
 }
 
-function harness({ pages, contextResult = context, description } = {}) {
+function harness({ pages, contextResult = context, description, cache } = {}) {
   const requests = [];
   const writes = [];
+  const batches = [];
   const tokens = {
     async authenticatedJsonResponse(request) {
       const url = new URL(request.url);
@@ -94,15 +102,31 @@ function harness({ pages, contextResult = context, description } = {}) {
   const metadata = {
     protectedResource: async () => ({ novamira: compatibility }),
   };
-  const cache = {
+  const recording = {
     async put(key, contractVersion, value) {
       writes.push({ key, contractVersion, value });
     },
+    async putMany(entries, contractVersion) {
+      batches.push(entries.length);
+      for (const entry of entries)
+        writes.push({
+          key: entry.key,
+          contractVersion,
+          value: entry.metadata,
+        });
+    },
   };
   return {
-    client: new AbilityClient(profile, metadata, tokens, cache, 5_000),
+    client: new AbilityClient(
+      profile,
+      metadata,
+      tokens,
+      cache ?? recording,
+      5_000,
+    ),
     requests,
     writes,
+    batches,
   };
 }
 
@@ -151,6 +175,8 @@ test("discovery is complete and atomic while projecting compact records", async 
     state.writes.map(({ key }) => key.abilityName),
     [first.name, second.name],
   );
+  // Both records are cached by a single batch call, never one call per record.
+  assert.deepEqual(state.batches, [2]);
   assert.equal(state.requests.at(-1).kind, "context");
 
   for (const contextFailure of [
@@ -168,6 +194,88 @@ test("discovery is complete and atomic while projecting compact records", async 
     );
     assert.deepEqual(failed.writes, []);
   }
+});
+
+test("caching a discovery costs one lock and a constant number of permission calls", async () => {
+  // The customer regression: caching 108 Abilities one record at a time took
+  // the cache lock 108 times and re-verified the whole cache directory on every
+  // write, which on Windows is one powershell.exe launch per verification.
+  const measure = async (count) => {
+    const root = await mkdtemp(join(tmpdir(), "novamira-discovery-"));
+    try {
+      const paths = platformPaths({ NOVAMIRA_HOME: root }, "linux", root);
+      const inner = new UnixFileSecurity();
+      const counts = {
+        secureDirectory: 0,
+        secureFile: 0,
+        verifyDirectory: 0,
+        verifyFile: 0,
+        secureMany: 0,
+        verifyMany: 0,
+      };
+      const security = Object.fromEntries(
+        Object.keys(counts).map((name) => [
+          name,
+          async (argument) => {
+            counts[name] += 1;
+            return inner[name](argument);
+          },
+        ]),
+      );
+      const manager = new ProfileLockManager(paths.stateDir, security);
+      let locks = 0;
+      const countingLocks = {
+        async withLock(name, operation, options) {
+          locks += 1;
+          return manager.withLock(name, operation, options);
+        },
+        async acquire(name, options) {
+          return manager.acquire(name, options);
+        },
+      };
+      const cache = new AbilityMetadataCache(
+        paths.cacheDir,
+        countingLocks,
+        security,
+      );
+      const records = Array.from({ length: count }, (_, index) =>
+        record(`vendor/ability-${index}`),
+      );
+      const state = harness({
+        pages: [{ data: records, headers: { "x-wp-totalpages": "1" } }],
+        cache,
+      });
+      assert.equal((await state.client.discover()).abilities.length, count);
+      const measured = { locks, counts: { ...counts } };
+      for (const cached of records)
+        assert.deepEqual(
+          await cache.get(
+            {
+              origin: profile.origin,
+              profileName: profile.name,
+              abilityName: cached.name,
+            },
+            1,
+          ),
+          cached,
+        );
+      return measured;
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+
+  const small = await measure(4);
+  const large = await measure(40);
+  assert.equal(small.locks, 1);
+  assert.equal(large.locks, small.locks);
+  assert.deepEqual(large.counts, small.counts);
+  // The only single-path hardening left is the lock file itself; the records
+  // are hardened and verified in batches.
+  assert.equal(small.counts.secureFile, 1);
+  assert.equal(small.counts.verifyFile, 0);
+  assert.equal(small.counts.secureMany, 1);
+  assert.equal(small.counts.verifyMany, 2);
 });
 
 test("pagination accepts empty and Link catalogs and rejects unsafe changes", async () => {

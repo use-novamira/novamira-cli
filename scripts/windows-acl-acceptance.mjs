@@ -38,27 +38,41 @@ const file = join(state, "credentials.json");
 
 // The production runner discards output, which leaves a failing script with no
 // explanation. This one reports what powershell.exe actually said.
+function invoke(command, args, input) {
+  // Must match the production runner's environment, or this script would
+  // pass or fail for reasons the CLI itself never sees.
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    windowsHide: true,
+    env: powerShellEnvironment(),
+    ...(input === undefined ? {} : { input }),
+  });
+  if (result.error) throw result.error;
+  // An unsafe verdict is a normal result, but it still explains itself on
+  // stderr, and that explanation is the whole point when a hardened path is
+  // rejected.
+  if (result.status !== 0 || result.stderr !== "")
+    process.stderr.write(
+      `${command} exited with ${String(result.status)}\n` +
+        `script: ${args[5]}\n` +
+        `inherited PSModulePath: ${process.env.PSModulePath ?? "(unset)"}\n` +
+        `stdin: ${input ?? "(none)"}\n` +
+        `stdout: ${result.stdout}\nstderr: ${result.stderr}\n`,
+    );
+  return result;
+}
+
 const reportingRunner = {
-  run: async (command, args) => {
-    // Must match the production runner's environment, or this script would
-    // pass or fail for reasons the CLI itself never sees.
-    const result = spawnSync(command, args, {
-      encoding: "utf8",
-      windowsHide: true,
-      env: powerShellEnvironment(),
-    });
-    if (result.error) throw result.error;
-    // An unsafe verdict (3) is a normal result, but it still explains itself on
-    // stderr, and that explanation is the whole point when a hardened path is
-    // rejected.
-    if (result.status !== 0 || result.stderr !== "")
-      process.stderr.write(
-        `${command} exited with ${String(result.status)}\n` +
-          `script: ${args[5]}\n` +
-          `inherited PSModulePath: ${process.env.PSModulePath ?? "(unset)"}\n` +
-          `stdout: ${result.stdout}\nstderr: ${result.stderr}\n`,
-      );
-    return result.status;
+  run: async (command, args) => invoke(command, args).status,
+  runWithInput: async (command, args, input) => {
+    // The batch script must carry its targets on stdin: a command line cannot
+    // hold a hundred storage paths under the Windows 32k limit.
+    assert.ok(
+      !args.some((argument) => argument.includes(home)),
+      "batch ACL invocations must not inline paths into the command line",
+    );
+    const result = invoke(command, args, input);
+    return { code: result.status, stdout: result.stdout };
   },
 };
 
@@ -92,6 +106,42 @@ try {
     await security.verifyFile(file),
     true,
     "a hardened file must verify as safe",
+  );
+
+  // One helper process for every target, answering in input order. The batch
+  // verdicts must agree with the single-path ones, including for a path that
+  // cannot be read at all: a per-target failure is a `false`, not an abort.
+  const missing = join(state, "absent.json");
+  assert.deepEqual(
+    await security.verifyMany([
+      { path: state, kind: "directory" },
+      { path: inherited, kind: "directory" },
+      { path: file, kind: "file" },
+      { path: missing, kind: "file" },
+      { path: home, kind: "directory" },
+    ]),
+    [true, false, true, false, true],
+    "batched verification must answer per target, in order",
+  );
+  assert.deepEqual(
+    await security.verifyMany([]),
+    [],
+    "an empty batch must inspect nothing",
+  );
+
+  // The batch apply path hardens the inherited directory the single-path
+  // checks left unsafe.
+  await security.secureMany([
+    { path: inherited, kind: "directory" },
+    { path: file, kind: "file" },
+  ]);
+  assert.deepEqual(
+    await security.verifyMany([
+      { path: inherited, kind: "directory" },
+      { path: file, kind: "file" },
+    ]),
+    [true, true],
+    "a batched apply must leave every target owner-only",
   );
 
   // doctor reads the same code through its own storage.permissions check.

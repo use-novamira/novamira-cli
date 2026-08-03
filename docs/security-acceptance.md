@@ -19,6 +19,7 @@ release gate.
 | Ambiguous mutations and uploads are not retried | `test/run-safety-contract.test.mjs`; `test/site-skill-upload-contract.test.mjs` |
 | Redirect/origin boundaries and bounded HTTP responses | `test/http-compatibility-contract.test.mjs`; `test/site-skill-upload-contract.test.mjs` |
 | Bounded caches/output and owner-only credential/artifact storage | `test/cache-artifacts-contract.test.mjs`; `test/credentials-contract.test.mjs`; `test/state-contract.test.mjs` |
+| Windows owner-only protected ACLs applied and verified in batch through one bounded helper process, with paths passed on stdin and a failed `Set-Acl` accepted only against a postcondition that verifies as safe | `test/state-contract.test.mjs`; `scripts/windows-acl-acceptance.mjs` |
 | Parseable JSON/exit agreement and complete doctor diagnostics | `test/process-contract.test.mjs`; `test/doctor-offline-contract.test.mjs`; `test/doctor-online-contract.test.mjs` |
 | Anonymous HTTPS-only update check (plain HTTP only for a loopback registry with `NOVAMIRA_ALLOW_INSECURE_HTTP=1`) that sends no site, profile, or credential data, bounds the response, never changes a command outcome, and installs on request from the registry it queried | `test/update-contract.test.mjs` |
 | Agent guidance teaches only the direct REST workflow | `test/guidance-contract.test.mjs` |

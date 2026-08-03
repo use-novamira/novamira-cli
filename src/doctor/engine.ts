@@ -7,7 +7,11 @@ import type { CredentialStore } from "../auth/credentials.js";
 import { localTokenStatus } from "../auth/token-lifecycle.js";
 import type { AbilityMetadataCache } from "../cache/ability-cache.js";
 import { probeAtomicWrite } from "../config/atomic-write.js";
-import type { VerifiedFileSecurity } from "../config/file-security.js";
+import type {
+  AclTarget,
+  AclTargetKind,
+  VerifiedFileSecurity,
+} from "../config/file-security.js";
 import { secureDirectory } from "../config/file-security.js";
 import type { PlatformPaths } from "../config/paths.js";
 import type {
@@ -53,14 +57,31 @@ export interface OfflineDoctorDependencies {
   readonly now?: () => number;
 }
 
-interface PermissionTarget {
+interface PermissionCandidate {
   readonly path: string;
-  readonly kind: "directory" | "file";
+  readonly kind: AclTargetKind;
   readonly label: string;
+}
+
+interface PermissionTarget extends PermissionCandidate {
   readonly safe: boolean;
   readonly fixable: boolean;
 }
 
+// A candidate that survived `lstat`. `verify` marks the ones whose node type
+// already matches, which are exactly the ones worth an ACL question; the rest
+// are unsafe no matter what the ACL says.
+interface InspectedTarget {
+  readonly target: PermissionTarget;
+  readonly verify: boolean;
+}
+
+// Deliberately sequential. Several checks reach the same profile lock key —
+// `oauth.token` and `profile.valid` both lock on the profile name, and
+// `storage.atomic --fix` locks the cache and artifact keys — and
+// `ProfileLockManager.acquire` rejects a key its own manager already holds.
+// Overlapping the definitions would therefore fail intermittently; the cost
+// they used to dominate is batched inside the individual checks instead.
 export async function runDoctorChecks(
   definitions: readonly DoctorCheckDefinition[],
   options: { readonly offline: boolean; readonly fix: boolean },
@@ -181,19 +202,29 @@ async function permissionCheck(
   );
   let fixed = false;
   if (fix) {
-    for (const target of targets.filter(
+    const repairable = targets.filter(
       (candidate) => !candidate.safe && candidate.fixable,
-    )) {
-      if (target.kind === "directory")
-        await dependencies.security.secureDirectory(target.path);
-      else await dependencies.security.secureFile(target.path);
+    );
+    if (repairable.length > 0) {
+      // One hardening pass for every repairable target, then one verification
+      // pass, instead of a helper process per target.
+      //
+      // A rejection is not reported here. `secureMany` fails the whole batch
+      // when any target cannot be proved owner-only afterwards, and a lock or
+      // cache file another `novamira` process removes mid-repair counts as
+      // exactly that - the same race the enumeration below already tolerates.
+      // Re-enumerating is what decides: a target that vanished is omitted and
+      // one that is genuinely still unsafe is reported as a failure, so a real
+      // problem is never swallowed.
+      await dependencies.security
+        .secureMany(repairable.map(aclTarget))
+        .catch(() => undefined);
       fixed = true;
-    }
-    if (fixed)
       targets = await permissionTargets(
         dependencies.paths,
         dependencies.security,
       );
+    }
   }
   const unsafe = targets.filter((target) => !target.safe);
   const evidence = {
@@ -392,11 +423,16 @@ async function tokenCheck(
   };
 }
 
-async function permissionTargets(
+function aclTarget(candidate: PermissionCandidate): AclTarget {
+  return { path: candidate.path, kind: candidate.kind };
+}
+
+// The candidate order is contractual: the evidence list and the fix ordering
+// both depend on it. Directories in their listed order, then the config file,
+// then each globbed group sorted by name.
+async function permissionCandidates(
   paths: PlatformPaths,
-  security: VerifiedFileSecurity,
-): Promise<PermissionTarget[]> {
-  const targets: PermissionTarget[] = [];
+): Promise<readonly PermissionCandidate[]> {
   const directories = [
     [dirname(paths.configFile), "config.directory"],
     [paths.stateDir, "state.directory"],
@@ -407,87 +443,141 @@ async function permissionTargets(
     [join(paths.cacheDir, "abilities", "v1"), "cache.abilities.directory"],
     [join(paths.cacheDir, "artifacts", "v1"), "cache.artifacts.directory"],
   ] as const;
-  for (const [path, label] of directories) {
-    const target = await inspectPermissionTarget(
-      path,
-      "directory",
-      label,
-      security,
-    );
-    if (target !== undefined) targets.push(target);
-  }
-  const config = await inspectPermissionTarget(
-    paths.configFile,
-    "file",
-    "config.file",
-    security,
+  const groups = await Promise.all(
+    (
+      [
+        [join(paths.stateDir, "locks"), /^[a-f0-9]{64}\.lock$/, "locks.file"],
+        [
+          join(paths.credentialsDir, "v1"),
+          /^[a-f0-9]{64}\.json$/,
+          "credentials.file",
+        ],
+        [
+          join(paths.cacheDir, "abilities", "v1"),
+          /^[a-f0-9]{64}\.json$/,
+          "cache.ability.file",
+        ],
+        [
+          join(paths.cacheDir, "artifacts", "v1"),
+          /^\d{13}-[a-f0-9-]{36}\.json$/,
+          "cache.artifact.file",
+        ],
+      ] as const
+    ).map(async ([directory, pattern, label]) => {
+      let names: string[];
+      try {
+        names = await readdir(directory);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          return [] as readonly PermissionCandidate[];
+        throw error;
+      }
+      return names
+        .filter((candidate) => pattern.test(candidate))
+        .sort()
+        .map((name) => ({
+          path: join(directory, name),
+          kind: "file" as const,
+          label,
+        }));
+    }),
   );
-  if (config !== undefined) targets.push(config);
-  for (const [directory, pattern, label] of [
-    [join(paths.stateDir, "locks"), /^[a-f0-9]{64}\.lock$/, "locks.file"],
-    [
-      join(paths.credentialsDir, "v1"),
-      /^[a-f0-9]{64}\.json$/,
-      "credentials.file",
-    ],
-    [
-      join(paths.cacheDir, "abilities", "v1"),
-      /^[a-f0-9]{64}\.json$/,
-      "cache.ability.file",
-    ],
-    [
-      join(paths.cacheDir, "artifacts", "v1"),
-      /^\d{13}-[a-f0-9-]{36}\.json$/,
-      "cache.artifact.file",
-    ],
-  ] as const) {
-    let names: string[];
-    try {
-      names = await readdir(directory);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw error;
-    }
-    for (const name of names
-      .filter((candidate) => pattern.test(candidate))
-      .sort()) {
-      const target = await inspectPermissionTarget(
-        join(directory, name),
-        "file",
-        label,
-        security,
-      );
-      if (target !== undefined) targets.push(target);
-    }
-  }
-  return targets;
+  return [
+    ...directories.map(([path, label]) => ({
+      path,
+      kind: "directory" as const,
+      label,
+    })),
+    { path: paths.configFile, kind: "file" as const, label: "config.file" },
+    ...groups.flat(),
+  ];
 }
 
-async function inspectPermissionTarget(
-  path: string,
-  kind: "directory" | "file",
-  label: string,
+// Every `lstat` runs first and concurrently, because they are cheap; the ACL
+// verdicts then arrive from a single batched check, so inspecting thirteen
+// targets costs one helper process on Windows rather than thirteen.
+async function permissionTargets(
+  paths: PlatformPaths,
   security: VerifiedFileSecurity,
-): Promise<PermissionTarget | undefined> {
+): Promise<PermissionTarget[]> {
+  const inspected = (
+    await Promise.all((await permissionCandidates(paths)).map(inspectCandidate))
+  ).filter((entry): entry is InspectedTarget => entry !== undefined);
+  const pending = inspected.filter((entry) => entry.verify);
+  if (pending.length === 0) return inspected.map((entry) => entry.target);
+  let verdicts: readonly boolean[];
+  // A checker that fails outright used to leave every target it touched
+  // unsafe and unfixable, and still does; only a working checker can prove a
+  // target safe.
+  let checkerFailed = false;
   try {
-    const info = await lstat(path);
-    const typeMatches =
-      kind === "directory" ? info.isDirectory() : info.isFile();
-    const safe =
-      typeMatches &&
-      (kind === "directory"
-        ? await security.verifyDirectory(path)
-        : await security.verifyFile(path));
+    verdicts = await security.verifyMany(
+      pending.map((entry) => aclTarget(entry.target)),
+    );
+  } catch {
+    verdicts = [];
+    checkerFailed = true;
+  }
+  let index = 0;
+  const judged = inspected.map((entry) => {
+    if (!entry.verify) return entry.target;
+    const safe = verdicts[index] ?? false;
+    index += 1;
     return {
-      path,
-      kind,
-      label,
+      ...entry.target,
       safe,
-      fixable: typeMatches && !info.isSymbolicLink(),
+      fixable: checkerFailed ? false : entry.target.fixable,
+    };
+  });
+  return dropVanished(judged);
+}
+
+// A target can disappear between the `lstat` pass and the batched verdict -
+// another `novamira` process releasing a lock file, or evicting a cache
+// record, is enough - and the checker answers `false` for a path it cannot
+// read. Reporting that as unsafe would fail `storage.permissions` for a
+// correctly hardened installation, so a target that no longer exists is
+// omitted, exactly as it would have been had the `lstat` come a moment later.
+async function dropVanished(
+  targets: readonly PermissionTarget[],
+): Promise<PermissionTarget[]> {
+  const present = await Promise.all(
+    targets.map(async (target) => {
+      if (target.safe) return true;
+      try {
+        await lstat(target.path);
+        return true;
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code !== "ENOENT";
+      }
+    }),
+  );
+  return targets.filter((_, index) => present[index]);
+}
+
+async function inspectCandidate(
+  candidate: PermissionCandidate,
+): Promise<InspectedTarget | undefined> {
+  try {
+    const info = await lstat(candidate.path);
+    const typeMatches =
+      candidate.kind === "directory" ? info.isDirectory() : info.isFile();
+    return {
+      // `safe` is provisional: only a batched ACL verdict can raise it, and a
+      // target whose node type is already wrong never gets one.
+      target: {
+        ...candidate,
+        safe: false,
+        fixable: typeMatches && !info.isSymbolicLink(),
+      },
+      verify: typeMatches,
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    return { path, kind, label, safe: false, fixable: false };
+    return {
+      target: { ...candidate, safe: false, fixable: false },
+      verify: false,
+    };
   }
 }
 

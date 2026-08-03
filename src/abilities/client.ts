@@ -84,8 +84,20 @@ export class AbilityClient {
       );
     }
 
-    for (const record of records)
-      await this.cacheRecord(record, publicMetadata.novamira.rest_api_version);
+    // One batched cache write, not one write per Ability: every write used to
+    // take the cache lock and re-verify the whole cache directory, so a site
+    // with a hundred Abilities spent minutes in filesystem and ACL work.
+    await this.cache.putMany(
+      records.map((record) => ({
+        key: {
+          origin: this.profile.origin,
+          profileName: this.profile.name,
+          abilityName: record.name as string,
+        },
+        metadata: record,
+      })),
+      publicMetadata.novamira.rest_api_version,
+    );
 
     return {
       context,
