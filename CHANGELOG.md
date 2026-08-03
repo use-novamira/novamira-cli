@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Ability failures now show the actionable error message returned by WordPress
+  instead of replacing it with a generic REST or schema-validation message.
+- File-editing refusals such as identical strings, missing matches, and multiple
+  matches now report a non-retryable validation error instead of an internal
+  error.
+
 ## 1.0.2
 
 ### Changed

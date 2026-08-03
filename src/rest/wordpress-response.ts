@@ -9,8 +9,15 @@ export interface WordPressRestError {
   readonly data?: {
     readonly status?: number;
     readonly [key: string]: unknown;
-  };
+  } | null;
 }
+
+const MAX_REMOTE_ERROR_MESSAGE_LENGTH = 2_048;
+const SEMANTIC_VALIDATION_CODES = new Set([
+  "multiple_matches",
+  "no_change",
+  "no_match",
+]);
 
 export function isWordPressRestError(
   value: unknown,
@@ -25,6 +32,7 @@ export function isWordPressRestError(
     return false;
   return (
     candidate.data === undefined ||
+    candidate.data === null ||
     (typeof candidate.data === "object" &&
       !Array.isArray(candidate.data) &&
       (candidate.data.status === undefined ||
@@ -57,9 +65,11 @@ export function normalizeWordPressError(
   httpStatus: number,
 ): CliError {
   const code = mappedCode(error.code, httpStatus);
-  return new CliError(code, safeMessage(code), {
+  return new CliError(code, remoteMessage(error.message, code), {
     remoteCode: error.code,
-    retryable: httpStatus >= 500,
+    retryable:
+      httpStatus >= 500 &&
+      (code === "rest_error" || code === "remote_execution_failed"),
     details:
       typeof error.data?.status === "number"
         ? { status: error.data.status }
@@ -77,6 +87,7 @@ function mappedCode(remoteCode: string, status: number): ErrorCode {
     return "ability_hidden";
   if (code.includes("ability_not_found")) return "ability_not_found";
   if (
+    SEMANTIC_VALIDATION_CODES.has(code) ||
     code.includes("invalid_param") ||
     code.includes("invalid_input") ||
     code.includes("schema")
@@ -88,7 +99,37 @@ function mappedCode(remoteCode: string, status: number): ErrorCode {
   return "rest_error";
 }
 
-function safeMessage(code: ErrorCode): string {
+function remoteMessage(message: string, code: ErrorCode): string {
+  const sanitized = Array.from(message, (character) =>
+    isUnsafeMessageCodePoint(character.codePointAt(0) ?? 0) ? " " : character,
+  )
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (sanitized === "") return fallbackMessage(code);
+
+  const graphemes = Array.from(
+    new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
+      sanitized,
+    ),
+    ({ segment }) => segment,
+  );
+  if (graphemes.length <= MAX_REMOTE_ERROR_MESSAGE_LENGTH) return sanitized;
+  return `${graphemes.slice(0, MAX_REMOTE_ERROR_MESSAGE_LENGTH - 1).join("")}…`;
+}
+
+function isUnsafeMessageCodePoint(codePoint: number): boolean {
+  return (
+    codePoint <= 0x1f ||
+    (codePoint >= 0x7f && codePoint <= 0x9f) ||
+    codePoint === 0x200e ||
+    codePoint === 0x200f ||
+    (codePoint >= 0x202a && codePoint <= 0x202e) ||
+    (codePoint >= 0x2066 && codePoint <= 0x2069)
+  );
+}
+
+function fallbackMessage(code: ErrorCode): string {
   switch (code) {
     case "auth_required":
       return "Authentication is required.";

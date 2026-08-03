@@ -12,6 +12,7 @@ import {
   validateProtectedResourceMetadata,
 } from "../dist/auth/metadata.js";
 import { HttpClient } from "../dist/rest/http-client.js";
+import { parseWordPressResponse } from "../dist/rest/wordpress-response.js";
 import {
   abilityItemUrl,
   restUrl,
@@ -41,6 +42,17 @@ function authorizationMetadata(site = "https://example.test") {
     token_endpoint_auth_methods_supported: ["none"],
     scopes_supported: ["mcp"],
   };
+}
+
+function wordpressError(status, body) {
+  let captured;
+  try {
+    parseWordPressResponse(status, JSON.stringify(body));
+  } catch (error) {
+    captured = error;
+  }
+  assert.notEqual(captured, undefined, "Expected a WordPress REST error");
+  return captured;
 }
 
 test("HTTP client bounds redirects, time, response bytes, diagnostics, and heterogeneous REST values", async () => {
@@ -219,6 +231,81 @@ test("HTTP client bounds redirects, time, response bytes, diagnostics, and heter
     }),
     (error) =>
       error.code === "auth_denied" && error.remoteCode === "invalid_client",
+  );
+});
+
+test("WordPress errors preserve safe actionable messages and classify semantic validation", async () => {
+  const noChange = wordpressError(500, {
+    code: "no_change",
+    message: "old_string and new_string are identical. No edit needed.",
+    data: null,
+  });
+  assert.equal(noChange.code, "schema_validation_failed");
+  assert.equal(noChange.remoteCode, "no_change");
+  assert.equal(
+    noChange.message,
+    "old_string and new_string are identical. No edit needed.",
+  );
+  assert.equal(noChange.retryable, false);
+  assert.deepEqual(noChange.details, { status: 500 });
+
+  const refusal = wordpressError(422, {
+    code: "builder_element_refused",
+    message:
+      "Element hero cannot be updated because its source is locked; unlock it and retry.",
+    data: { status: 422 },
+  });
+  assert.equal(refusal.code, "rest_error");
+  assert.equal(refusal.remoteCode, "builder_element_refused");
+  assert.equal(
+    refusal.message,
+    "Element hero cannot be updated because its source is locked; unlock it and retry.",
+  );
+
+  const invalidInput = wordpressError(400, {
+    code: "ability_invalid_input",
+    message:
+      'Ability input is invalid. Reason: input["title"] is not of type string.',
+    data: { status: 400 },
+  });
+  assert.equal(invalidInput.code, "schema_validation_failed");
+  assert.equal(
+    invalidInput.message,
+    'Ability input is invalid. Reason: input["title"] is not of type string.',
+  );
+
+  const sanitized = wordpressError(400, {
+    code: "invalid_input",
+    message: `First line\n\u001b[31mSecond line ${"x".repeat(3_000)}`,
+    data: { status: 400 },
+  });
+  assert.doesNotMatch(sanitized.message, /[\n\u001b]/u);
+  assert.match(sanitized.message, /^First line \[31mSecond line /u);
+  assert.equal([...sanitized.message].length, 2_048);
+  assert.match(sanitized.message, /…$/u);
+
+  const redacted = new HttpClient({
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          code: "ability_invalid_input",
+          message: "The submitted value bearer-must-not-log is invalid.",
+          data: { status: 400 },
+        }),
+        { status: 400 },
+      ),
+  });
+  await assert.rejects(
+    redacted.authenticatedJson(
+      {
+        url: "https://example.test/run",
+        expectedOrigin: "https://example.test",
+      },
+      { getAccessToken: async () => "bearer-must-not-log" },
+    ),
+    (error) =>
+      error.code === "schema_validation_failed" &&
+      error.message === "The submitted value [REDACTED] is invalid.",
   );
 });
 
