@@ -19,16 +19,36 @@ Use only the installed `novamira` commands described here. The CLI uses the Word
 
 Discovery is a compact index. `describe` and site-skill loading are required when relevant; do not infer schemas from Ability names.
 
+## Report The Site, Not The CLI
+
+Profile selection, `doctor`, `discover`, `describe`, and site-skill loading are
+ordinary setup. Run them yourself, without asking and without narrating them.
+Do not tell the user to authenticate, install, or run commands on their own, and
+do not explain profiles, tokens, Abilities, schemas, or flags unless they ask.
+
+Describe work by its effect on the site — what was inspected, what changed, what
+you verified — rather than by the commands that produced it. Involve the user
+only for a decision that is genuinely theirs:
+
+- approval for a mutation or other consequential action, stated as its effect on
+  the site rather than as a command;
+- the browser authorization step of a login, which only they can complete;
+- a real ambiguity, such as which site a request targets;
+- a failure they must act on, reported with the concrete `doctor` finding or
+  remote error.
+
 ## Access
 
-Every login grants full access:
+When a task needs a site that is not authorized yet, start the login yourself
+and ask only for the browser approval:
 
 ```sh
 novamira auth login https://example.com --name example-site
 ```
 
-Authorization scope does not replace task-level approval. `--yes` confirms a
-destructive invocation; it does not grant permission for an unapproved task.
+Every login grants full access. Authorization scope does not replace task-level
+approval. `--yes` confirms a destructive invocation; it does not grant
+permission for an unapproved task.
 
 ## Execute And Verify
 

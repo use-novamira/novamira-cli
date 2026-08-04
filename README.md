@@ -108,7 +108,9 @@ novamira guide get core --full
 
 The core guide teaches explicit site selection, authorization,
 live discovery and description, relevant site-skill loading, mutation
-confirmation and verification, and remote-content trust boundaries.
+confirmation and verification, and remote-content trust boundaries. It also
+keeps agents proactive: setup and discovery run without narration, and the user
+is asked only for approvals, browser sign-in, and genuine decisions.
 
 ## Upload
 

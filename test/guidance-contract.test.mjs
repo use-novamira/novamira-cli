@@ -51,7 +51,21 @@ test("bundled guidance is complete, consistent, and safely opinionated", async (
       required,
     );
 
-  const allGuidance = `${await readFile(new URL("../skills/novamira/SKILL.md", import.meta.url), "utf8")}\n${full.content}`;
+  const discoverySkill = await readFile(
+    new URL("../skills/novamira/SKILL.md", import.meta.url),
+    "utf8",
+  );
+
+  // Setup is the agent's own work: it neither delegates it to the user nor
+  // narrates the CLI mechanics back to them.
+  assert.match(full.content, /\b(?:without narrating|do not narrate)\b/i);
+  assert.match(
+    full.content,
+    /\bdo not (?:tell|ask) the user to\b[^.]*\brun commands\b/i,
+  );
+  assert.match(full.content, /browser authorization step of a login/i);
+
+  const allGuidance = `${discoverySkill}\n${full.content}`;
   const actionableGuidance = allGuidance
     .split("\n")
     .filter((line) => !/\b(?:do not|never|must not|cannot)\b/i.test(line))
