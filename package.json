@@ -1,6 +1,6 @@
 {
   "name": "@novamira/cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "REST-first command-line client for Novamira WordPress Abilities",
   "license": "AGPL-3.0-or-later",
   "author": "Ovation S.r.l.",

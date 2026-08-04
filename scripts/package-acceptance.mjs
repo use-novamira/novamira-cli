@@ -40,7 +40,7 @@ try {
   const packResult = JSON.parse(packed.stdout);
   const manifest = Array.isArray(packResult) ? packResult[0] : packResult;
   assert.equal(manifest.name, "@novamira/cli");
-  assert.equal(manifest.version, "1.0.2");
+  assert.equal(manifest.version, "1.0.3");
   assert.equal(
     manifest.integrity,
     process.env.NOVAMIRA_EXPECTED_INTEGRITY ?? manifest.integrity,
@@ -182,7 +182,7 @@ try {
 
 function verifyInstalledCommands(command, home) {
   assert.match(run(command, ["--help"], temporary).stdout, /Usage: novamira/);
-  assert.equal(run(command, ["--version"], temporary).stdout.trim(), "1.0.2");
+  assert.equal(run(command, ["--version"], temporary).stdout.trim(), "1.0.3");
   const guide = JSON.parse(
     run(command, ["--json", "guide", "get", "core", "--full"], temporary)
       .stdout,

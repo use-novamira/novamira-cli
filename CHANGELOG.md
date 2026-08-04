@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.0.3
+
+### Changed
+
+- The core guide now keeps agents proactive: setup, discovery, and description
+  run without narration, and the user is involved only for mutation approval,
+  browser sign-in, a genuine ambiguity, or a failure they must act on.
 
 ### Fixed
 
