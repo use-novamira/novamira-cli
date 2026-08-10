@@ -70,7 +70,7 @@ Novamira management capability, target Ability permission callback, or
 The v1 command names are fixed:
 
 ```text
-novamira auth login <url> [--name <name>] [--no-open]
+novamira auth login <url> [--name <name>] [--no-open] [--device]
 novamira auth status
 novamira auth logout
 novamira sites list
@@ -87,6 +87,33 @@ novamira update [--check]
 ```
 
 `auth login` always requests the full `mcp` scope.
+
+`auth login --device` runs the RFC 8628 device authorization grant instead of
+the loopback authorization-code grant, for shells whose browser cannot reach a
+listener on the CLI host. It is available only when authorization-server
+metadata advertises both a same-origin `device_authorization_endpoint` and the
+`urn:ietf:params:oauth:grant-type:device_code` grant; otherwise login fails with
+`server_unsupported` before any client registration or device-code request. The
+device client is registered separately from the loopback client, with no
+`redirect_uris` and the device-code and `refresh_token` grants, and a stored
+client the server rejects as `invalid_client` or `unauthorized_client` is
+re-registered once. The profile records which grant its `clientId` was
+registered for, and a stored client is reused only for that grant; a profile
+written before this was recorded holds a loopback client. The CLI validates that `verification_uri` is a same-origin
+endpoint, requires `expires_in` within 30 minutes and any `interval` within 60
+seconds, defaults a missing `interval` to 5 seconds, adds 5 seconds on
+`slow_down`, keeps polling on `authorization_pending`, and stops on any other
+error. Polling ends at the earlier of the device code's expiry and `--timeout`;
+that deadline also bounds each token request and is rechecked against the
+response, so a grant that arrives after it is discarded rather than stored.
+`verification_uri_complete` is never used, so approval always passes through the
+page that renders the consent text, which accepts the code only from its own
+manual-entry form. `--device` opens no listener, launches no
+browser, and is unaffected by `--no-open`. The resulting grant, scope, storage,
+and refresh behavior are identical to the browser flow. When the browser flow
+runs in a session that advertises itself as remote (`SSH_CONNECTION` or
+`SSH_TTY`) and the site supports device authorization, the CLI prints one stderr
+hint naming `--device`.
 
 Global options are `--site <name>`, `--json`, `--timeout <ms>`, `--yes`, `--max-output <bytes>`, `--no-color`, `--quiet`, `--verbose`, and `--version`. `NO_COLOR` has the same color-disabling effect as `--no-color`. Command-specific aliases and an implicit mutable default-site command are not part of v1.
 

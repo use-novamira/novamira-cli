@@ -15,6 +15,7 @@ import {
 import { compareSemver } from "../semver.js";
 
 export const COMPATIBILITY_CACHE_TTL_MS = 5 * 60 * 1000;
+export const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 export const MINIMUM_NOVAMIRA_VERSION = "1.11.1";
 export const REQUIRED_FEATURES = [
   "abilities_bearer_auth",
@@ -46,6 +47,7 @@ export interface AuthorizationServerMetadata {
   readonly registration_endpoint: string;
   readonly revocation_endpoint: string;
   readonly introspection_endpoint?: string;
+  readonly device_authorization_endpoint?: string;
   readonly response_types_supported: readonly string[];
   readonly grant_types_supported: readonly string[];
   readonly code_challenge_methods_supported: readonly string[];
@@ -230,12 +232,41 @@ export function validateAuthorizationServerMetadata(
     ...(object.introspection_endpoint === undefined
       ? {}
       : { introspection_endpoint: endpoint("introspection_endpoint") }),
+    // Optional: only sites that advertise both the endpoint and the grant can
+    // run device authorization, and older sites must keep working without it.
+    ...(object.device_authorization_endpoint === undefined
+      ? {}
+      : {
+          device_authorization_endpoint: endpoint(
+            "device_authorization_endpoint",
+          ),
+        }),
     response_types_supported: responseTypes,
     grant_types_supported: grants,
     code_challenge_methods_supported: challenges,
     token_endpoint_auth_methods_supported: authMethods,
     scopes_supported: scopes,
   };
+}
+
+export function supportsDeviceAuthorization(
+  value: AuthorizationServerMetadata,
+): boolean {
+  return (
+    value.device_authorization_endpoint !== undefined &&
+    value.grant_types_supported.includes(DEVICE_CODE_GRANT)
+  );
+}
+
+export function deviceAuthorizationEndpoint(
+  value: AuthorizationServerMetadata,
+): string {
+  const endpoint = value.device_authorization_endpoint;
+  if (endpoint === undefined || !supportsDeviceAuthorization(value))
+    throw unsupported(
+      "This site does not support device authorization; upgrade Novamira or authorize in a local browser.",
+    );
+  return endpoint;
 }
 
 export function assertCompatible(value: unknown): ServerCompatibility {

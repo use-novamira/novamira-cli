@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `auth login --device` authorizes with a device code instead of a local
+  browser, for SSH sessions, containers, and any host whose browser cannot reach
+  a loopback listener on the CLI. The CLI prints a verification URL on the site
+  and a short user code, then polls until the code is approved; it opens no port
+  and launches no browser. Sites that do not advertise the grant report
+  `server_unsupported`, and the browser flow still works there.
+
 ## 1.0.3
 
 ### Changed

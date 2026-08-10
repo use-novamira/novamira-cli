@@ -21,6 +21,7 @@ export interface GlobalOptions {
 export interface AuthLoginOptions extends GlobalOptions {
   readonly name?: string;
   readonly open: boolean;
+  readonly device: boolean;
 }
 
 export interface RunOptions extends GlobalOptions {
@@ -143,6 +144,11 @@ export function createProgram(
     .command("login <url>")
     .option("--name <name>", "profile name")
     .option("--no-open", "do not launch a browser")
+    .option(
+      "--device",
+      "authorize with a device code instead of a local browser",
+      false,
+    )
     .action(async (url: string, ...values: unknown[]) =>
       handlers.authLogin(url, authLoginOptions(values)),
     );

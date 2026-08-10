@@ -14,6 +14,7 @@ import {
   assertWordPressCompatible,
   MINIMUM_NOVAMIRA_VERSION,
   REQUIRED_FEATURES,
+  supportsDeviceAuthorization,
   type AuthorizationServerMetadata,
   type MetadataClient,
   type ProtectedResourceMetadata,
@@ -475,6 +476,7 @@ function authorizationEvidence(
     refreshToken: value.grant_types_supported.includes("refresh_token"),
     pkceS256: value.code_challenge_methods_supported.includes("S256"),
     publicClient: value.token_endpoint_auth_methods_supported.includes("none"),
+    deviceAuthorization: supportsDeviceAuthorization(value),
     registration: true,
     revocation: true,
   };

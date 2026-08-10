@@ -17,11 +17,25 @@ export interface ProfileCompatibility {
   readonly checkedAt?: string;
 }
 
+/**
+ * Which OAuth grant the stored `clientId` was registered for. A device client
+ * registers no redirect URI and a loopback client is not registered for the
+ * device grant, so neither can stand in for the other and the mode has to be
+ * remembered alongside the id. A profile written before this was recorded holds
+ * a loopback client, which is all earlier releases could register.
+ */
+export const CLIENT_GRANTS = ["authorization_code", "device_code"] as const;
+
+export type ClientGrant = (typeof CLIENT_GRANTS)[number];
+
+export const DEFAULT_CLIENT_GRANT: ClientGrant = "authorization_code";
+
 export interface SiteProfile {
   readonly name: string;
   readonly siteUrl: string;
   readonly origin: string;
   readonly clientId?: string;
+  readonly clientGrant?: ClientGrant;
   readonly compatibility?: ProfileCompatibility;
 }
 
@@ -66,7 +80,14 @@ function isProfile(value: unknown): value is SiteProfile {
   const keys = Object.keys(profile);
   if (
     !keys.every((key) =>
-      ["name", "siteUrl", "origin", "clientId", "compatibility"].includes(key),
+      [
+        "name",
+        "siteUrl",
+        "origin",
+        "clientId",
+        "clientGrant",
+        "compatibility",
+      ].includes(key),
     )
   ) {
     return false;
@@ -95,7 +116,9 @@ function isProfile(value: unknown): value is SiteProfile {
     typeof profile.name === "string" &&
     typeof profile.siteUrl === "string" &&
     typeof profile.origin === "string" &&
-    (profile.clientId === undefined || typeof profile.clientId === "string")
+    (profile.clientId === undefined || typeof profile.clientId === "string") &&
+    (profile.clientGrant === undefined ||
+      (CLIENT_GRANTS as readonly string[]).includes(profile.clientGrant))
   ))
     return false;
   try {
@@ -139,6 +162,7 @@ export class ProfileStore {
     name: string;
     siteUrl: string;
     clientId?: string;
+    clientGrant?: ClientGrant;
     compatibility?: ProfileCompatibility;
   }): Promise<SiteProfile> {
     const name = validateProfileName(input.name);
@@ -151,6 +175,7 @@ export class ProfileStore {
     name: string;
     siteUrl: string;
     clientId?: string;
+    clientGrant?: ClientGrant;
     compatibility?: ProfileCompatibility;
   }): Promise<SiteProfile> {
     const name = validateProfileName(input.name);
@@ -159,6 +184,9 @@ export class ProfileStore {
       name,
       ...normalized,
       ...(input.clientId === undefined ? {} : { clientId: input.clientId }),
+      ...(input.clientGrant === undefined
+        ? {}
+        : { clientGrant: input.clientGrant }),
       ...(input.compatibility === undefined
         ? {}
         : { compatibility: input.compatibility }),

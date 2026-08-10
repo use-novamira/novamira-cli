@@ -71,6 +71,24 @@ novamira auth login https://example.com --name example-site
 
 Every login authorizes the complete MCP and REST-visible Ability surface. `--no-open` prints the browser authorization URL on stderr without launching a browser. Login allows five minutes for browser authorization by default; use `--timeout <ms>` to override that wait. Login checks public compatibility before opening a listener or browser, uses PKCE S256, verifies the authenticated Ability surface, and only then stores the grant.
 
+### Remote shells
+
+The default flow needs a browser that can reach a loopback listener on the
+machine running the CLI. Over SSH, inside a container, or on any host whose
+browser lives elsewhere, use device authorization instead:
+
+```sh
+novamira auth login https://example.com --device
+```
+
+The CLI prints a verification URL on the site itself and a short user code, then
+polls until the code is approved; no port on the CLI host is opened and no
+browser is launched. Approve the code from any device where you are signed in to
+WordPress as the same user. `--timeout <ms>` and the code's own expiry both bound
+the wait, whichever ends first. Device authorization requires a site that
+advertises it; older sites report `server_unsupported`, and the browser flow
+still works there.
+
 For isolated development networks that expose a site over plain HTTP with a
 non-loopback hostname, opt in for each CLI invocation with
 `NOVAMIRA_ALLOW_INSECURE_HTTP=1`. Never use this override with production sites

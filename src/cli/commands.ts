@@ -9,6 +9,7 @@ import {
   LoginService,
   SystemBrowserLauncher,
   TerminalLoginInteraction,
+  type LoginEnvironment,
 } from "../auth/login.js";
 import { LoopbackCallbackFactory } from "../auth/loopback.js";
 import type { MetadataClient } from "../auth/metadata.js";
@@ -63,7 +64,7 @@ interface CommandResult {
 }
 
 export interface CommandEnvironment
-  extends SelectionEnvironment, SiteUrlEnvironment {
+  extends SelectionEnvironment, SiteUrlEnvironment, LoginEnvironment {
   readonly NOVAMIRA_REGISTRY?: string;
 }
 
@@ -233,6 +234,7 @@ export function createCommandHandlers(
           siteUrl,
           ...(options.name === undefined ? {} : { name: options.name }),
           noOpen: !options.open,
+          device: options.device,
           timeoutMs: options.timeout,
         });
         return {
