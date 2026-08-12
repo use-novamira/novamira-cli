@@ -262,12 +262,19 @@ test("macOS keychain backend stores long secrets without truncation or emptying"
   }
 });
 
-test("the Windows credential backend inlines its inputs instead of relying on $args", async () => {
+test("the Windows credential backend stores realistic tokens within the credential blob limit", async () => {
   const current = await state();
   try {
+    const windowsSizedRecord = {
+      ...first,
+      accessToken: "a".repeat(733),
+      refreshToken: "r".repeat(798),
+    };
+    assert.equal(JSON.stringify(windowsSizedRecord).length, 1632);
     const records = new Map();
     // Faithful stand-in for `powershell.exe -Command`: $args is never populated,
-    // so the mock reads the action and target only from the script text.
+    // so the mock reads the action and target only from the script text. It
+    // also enforces CRED_MAX_CREDENTIAL_BLOB_SIZE exactly as CredWriteW does.
     const executor = {
       execute: async (command, args, stdin = "") => {
         assert.equal(command, "powershell.exe");
@@ -292,6 +299,11 @@ test("the Windows credential backend inlines its inputs instead of relying on $a
         assert.ok(action, `script must inline its action: ${script}`);
         assert.ok(target, `script must inline its target: ${script}`);
         if (action === "write") {
+          const encoding = script.includes("Encoding.UTF8.GetBytes(secret)")
+            ? "utf8"
+            : "utf16le";
+          if (Buffer.byteLength(stdin, encoding) > 2560)
+            return { code: 1, stdout: "" };
           records.set(target, stdin);
           return { code: 0, stdout: "" };
         }
@@ -311,8 +323,8 @@ test("the Windows credential backend inlines its inputs instead of relying on $a
       { platform: "win32", executor },
     );
     assert.equal(keychain.diagnostic().backend, "windows-credential-manager");
-    await keychain.replace(target, first);
-    assert.deepEqual(await keychain.read(target), first);
+    await keychain.replace(target, windowsSizedRecord);
+    assert.deepEqual(await keychain.read(target), windowsSizedRecord);
     await keychain.replace(target, second);
     assert.deepEqual(await keychain.read(target), second);
     await keychain.delete(target);

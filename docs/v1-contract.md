@@ -248,7 +248,7 @@ OS-backed storage uses service `ai.novamira.cli` and an account equal to the sta
 
 1. macOS `security` generic-password records.
 2. Linux `secret-tool` Secret Service records.
-3. Windows Credential Manager records through PowerShell `Add-Type` P/Invoke of inbox Advapi32 `CredReadW`, `CredWriteW`, and `CredDeleteW`.
+3. Windows Credential Manager records through PowerShell `Add-Type` P/Invoke of inbox Advapi32 `CredReadW`, `CredWriteW`, and `CredDeleteW`. Credential blobs use compact UTF-8 so realistic access and refresh token pairs fit under Windows' 2,560-byte blob limit; reads retain compatibility with the UTF-16 records written by CLI 1.0.x.
 4. Explicit file fallback under the platform credential directory, selected with `NOVAMIRA_CREDENTIAL_BACKEND=file` (or automatically only when the platform credential command is unavailable).
 
 The spike rejected `keytar`, `@github/keytar`, `@napi-rs/keyring`, and `cross-keychain` as runtime dependencies because their native/optional-native payloads conflict with package acceptance. Platform tools receive arguments through `spawn`/`execFile`, never shell interpolation, and secrets are passed on stdin where supported.

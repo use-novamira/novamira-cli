@@ -73,7 +73,8 @@ export class MacOsKeychainBackend extends CommandCredentialBackend {
     // `ps`). That is unavoidable with the `security` CLI for secrets over 128
     // bytes, the exposure window is momentary, and macOS restricts argv
     // visibility to the same user. Linux (secret-tool) and Windows (CredWrite)
-    // read the secret from stdin without a length cap and keep using it.
+    // keep using stdin; Windows stores the resulting JSON as compact UTF-8 to
+    // stay within Credential Manager's 2,560-byte credential-blob limit.
     const result = await this.executor.execute("security", [
       "add-generic-password",
       "-U",
@@ -186,11 +187,11 @@ public static class NovamiraCredential {
   [DllImport("advapi32.dll", EntryPoint="CredDeleteW", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool CredDelete(string target, uint type, uint flags);
   [DllImport("advapi32.dll")] static extern void CredFree(IntPtr buffer);
   public static void Write(string target, string secret) {
-    byte[] bytes=Encoding.Unicode.GetBytes(secret); IntPtr blob=Marshal.AllocCoTaskMem(bytes.Length);
+    byte[] bytes=Encoding.UTF8.GetBytes(secret); IntPtr blob=Marshal.AllocCoTaskMem(bytes.Length);
     try { Marshal.Copy(bytes,0,blob,bytes.Length); var c=new CREDENTIAL { Type=1, TargetName=target, CredentialBlobSize=(uint)bytes.Length, CredentialBlob=blob, Persist=2, UserName=Environment.UserName }; if(!CredWrite(ref c,0)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
-    finally { for(int i=0;i<bytes.Length;i++) Marshal.WriteByte(blob,i,0); Marshal.FreeCoTaskMem(blob); }
+    finally { for(int i=0;i<bytes.Length;i++) { Marshal.WriteByte(blob,i,0); bytes[i]=0; } Marshal.FreeCoTaskMem(blob); }
   }
-  public static string Read(string target) { IntPtr ptr; if(!CredRead(target,1,0,out ptr)) { if(Marshal.GetLastWin32Error()==1168) return null; throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); } try { var c=(CREDENTIAL)Marshal.PtrToStructure(ptr,typeof(CREDENTIAL)); return Marshal.PtrToStringUni(c.CredentialBlob,(int)c.CredentialBlobSize/2); } finally { CredFree(ptr); } }
+  public static string Read(string target) { IntPtr ptr; if(!CredRead(target,1,0,out ptr)) { if(Marshal.GetLastWin32Error()==1168) return null; throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); } try { var c=(CREDENTIAL)Marshal.PtrToStructure(ptr,typeof(CREDENTIAL)); int size=(int)c.CredentialBlobSize; byte[] bytes=new byte[size]; try { Marshal.Copy(c.CredentialBlob,bytes,0,size); bool legacyUtf16=size>=2 && bytes[0]==0x7b && bytes[1]==0; return (legacyUtf16 ? Encoding.Unicode : Encoding.UTF8).GetString(bytes); } finally { Array.Clear(bytes,0,bytes.Length); } } finally { CredFree(ptr); } }
   public static void Delete(string target) { if(!CredDelete(target,1,0) && Marshal.GetLastWin32Error()!=1168) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
 }`;
 

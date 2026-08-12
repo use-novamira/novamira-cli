@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Windows: OAuth credentials with realistic access and refresh token lengths
+  now fit within Credential Manager's credential-blob limit.
+
 ## 1.1.0
 
 ### Added
