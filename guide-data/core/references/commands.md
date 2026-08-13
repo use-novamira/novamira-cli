@@ -26,6 +26,7 @@ Useful local and authorization commands:
 
 ```sh
 novamira sites list --json
+novamira sites rename <name> <new-name> --json
 novamira --site example-site auth status --json
 novamira --site example-site doctor --json
 novamira --site example-site auth logout --json

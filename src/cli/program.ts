@@ -51,6 +51,11 @@ export interface CommandHandlers {
   authLogout(options: GlobalOptions): void | Promise<void>;
   sitesList(options: GlobalOptions): void | Promise<void>;
   sitesRemove(name: string, options: GlobalOptions): void | Promise<void>;
+  sitesRename(
+    name: string,
+    newName: string,
+    options: GlobalOptions,
+  ): void | Promise<void>;
   discover(options: GlobalOptions): void | Promise<void>;
   describe(ability: string, options: GlobalOptions): void | Promise<void>;
   run(ability: string, options: RunOptions): void | Promise<void>;
@@ -173,6 +178,11 @@ export function createProgram(
     .command("remove <name>")
     .action(async (name: string, ...values: unknown[]) =>
       handlers.sitesRemove(name, optionsFor(values)),
+    );
+  sites
+    .command("rename <name> <new-name>")
+    .action(async (name: string, newName: string, ...values: unknown[]) =>
+      handlers.sitesRename(name, newName, optionsFor(values)),
     );
 
   program

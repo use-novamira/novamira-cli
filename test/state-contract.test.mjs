@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createCredentialStore } from "../dist/auth/credential-store.js";
+import { AbilityMetadataCache } from "../dist/cache/ability-cache.js";
 import {
   atomicWriteFile,
   atomicWriteFiles,
@@ -176,6 +178,180 @@ test("profiles update atomically, select deterministically, and invoke cleanup b
       0,
     );
     assert.equal(JSON.parse(removed).data.removed, "production");
+  } finally {
+    await rm(state.root, { recursive: true, force: true });
+  }
+});
+
+test("profiles rename moves credentials and invalidates caches without running cleanup", async () => {
+  const state = await isolatedState();
+  const cleaned = [];
+  const renamed = [];
+  try {
+    const credentials = await createCredentialStore(
+      state.paths.credentialsDir,
+      state.locks,
+      state.security,
+      { preference: "file" },
+    );
+    const cache = new AbilityMetadataCache(
+      state.paths.cacheDir,
+      state.locks,
+      state.security,
+    );
+    const store = new ProfileStore(
+      state.paths.configFile,
+      state.locks,
+      state.security,
+      [{ cleanup: async (profile) => cleaned.push(profile.name) }, cache],
+      {},
+      [
+        {
+          rename: async (from, toName) => {
+            renamed.push([from.name, toName]);
+            const target = { profileName: from.name, origin: from.origin };
+            const record = await credentials.readUnderLock(target);
+            if (record !== undefined) {
+              await credentials.replaceUnderLock(
+                { profileName: toName, origin: from.origin },
+                record,
+              );
+              await credentials.deleteUnderLock(target);
+            }
+          },
+        },
+        cache,
+      ],
+    );
+    const secret = {
+      version: 1,
+      accessToken: "access-secret",
+      refreshToken: "refresh-secret",
+      scope: "mcp",
+      expiresAt: "2026-07-20T15:00:00.000Z",
+    };
+    await store.upsert({ name: "production", siteUrl: "https://example.test" });
+    await store.upsert({
+      name: "staging",
+      siteUrl: "https://staging.example.test",
+    });
+    await credentials.replace(
+      { profileName: "production", origin: "https://example.test" },
+      secret,
+    );
+    await cache.put(
+      {
+        origin: "https://example.test",
+        profileName: "production",
+        abilityName: "novamira/read-file",
+      },
+      1,
+      { name: "novamira/read-file" },
+    );
+    assert.deepEqual(
+      await cache.get(
+        {
+          origin: "https://example.test",
+          profileName: "production",
+          abilityName: "novamira/read-file",
+        },
+        1,
+      ),
+      { name: "novamira/read-file" },
+    );
+
+    let renamedOut = "";
+    assert.equal(
+      await main(
+        ["--json", "sites", "rename", "production", "prod"],
+        {
+          stdout: { write: (value) => (renamedOut += value) },
+          stderr: { write: () => undefined },
+        },
+        {
+          NOVAMIRA_HOME: state.root,
+          NOVAMIRA_UPDATE_CHECK: "0",
+          NOVAMIRA_CREDENTIAL_BACKEND: "file",
+        },
+      ),
+      0,
+    );
+    assert.equal(JSON.parse(renamedOut).data.renamed, "prod");
+    assert.equal(JSON.parse(renamedOut).data.siteUrl, "https://example.test");
+    assert.deepEqual(cleaned, []);
+
+    const config = JSON.parse(await readFile(state.paths.configFile, "utf8"));
+    assert.deepEqual(Object.keys(config.profiles).sort(), ["prod", "staging"]);
+    assert.equal(config.profiles.prod.name, "prod");
+    assert.equal(config.profiles.prod.origin, "https://example.test");
+    assert.deepEqual(config.profiles.prod.siteUrl, "https://example.test");
+
+    assert.deepEqual(
+      await credentials.read({
+        profileName: "prod",
+        origin: "https://example.test",
+      }),
+      secret,
+    );
+    assert.equal(
+      await credentials.read({
+        profileName: "production",
+        origin: "https://example.test",
+      }),
+      undefined,
+    );
+    assert.equal(
+      await cache.get(
+        {
+          origin: "https://example.test",
+          profileName: "prod",
+          abilityName: "novamira/read-file",
+        },
+        1,
+      ),
+      undefined,
+    );
+    assert.equal(
+      await cache.get(
+        {
+          origin: "https://example.test",
+          profileName: "production",
+          abilityName: "novamira/read-file",
+        },
+        1,
+      ),
+      undefined,
+    );
+
+    await assert.rejects(store.rename("prod", "staging"), {
+      code: "usage_error",
+    });
+    await assert.rejects(store.rename("missing", "other"), {
+      code: "site_not_found",
+    });
+    await assert.rejects(store.rename("prod", "prod"), {
+      code: "usage_error",
+    });
+    assert.equal((await store.get("prod")).name, "prod");
+    assert.equal(
+      (await store.get("staging")).siteUrl,
+      "https://staging.example.test",
+    );
+
+    // A failed rename never ran its hooks; a direct store rename runs them once
+    // with the source profile and target name, and never invokes cleanup.
+    assert.deepEqual(renamed, []);
+    await store.upsert({
+      name: "deploy",
+      siteUrl: "https://deploy.example.test",
+    });
+    const renamedProfile = await store.rename("deploy", "live");
+    assert.equal(renamedProfile.name, "live");
+    assert.equal(renamedProfile.origin, "https://deploy.example.test");
+    assert.deepEqual(renamed, [["deploy", "live"]]);
+    assert.deepEqual(cleaned, []);
+    assert.equal((await store.get("live")).name, "live");
+    assert.equal(await store.get("deploy"), undefined);
   } finally {
     await rm(state.root, { recursive: true, force: true });
   }

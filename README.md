@@ -99,6 +99,19 @@ REST reachability without printing credentials. `novamira auth logout` attempts
 to revoke the rotating refresh grant and always removes local credentials and
 cached Ability metadata; a remote revocation failure is reported as a warning.
 
+## Site Profiles
+
+```sh
+novamira sites list
+novamira sites rename example-site example --json
+novamira sites remove example
+```
+
+`novamira sites rename <name> <new-name>` renames a profile, moving its stored
+OAuth credentials with it and invalidating the old profile's cached Ability
+metadata. It never changes the site URL, origin, or grant, and it does not
+revoke remote access.
+
 ## Abilities And Site Data
 
 ```sh

@@ -114,6 +114,23 @@ export async function main(
       abilityCache,
     ],
     environment,
+    [
+      {
+        rename: async (from, toName) => {
+          const credentials = await getCredentialStore();
+          const target = { profileName: from.name, origin: from.origin };
+          const record = await credentials.readUnderLock(target);
+          if (record !== undefined) {
+            await credentials.replaceUnderLock(
+              { profileName: toName, origin: from.origin },
+              record,
+            );
+            await credentials.deleteUnderLock(target);
+          }
+        },
+      },
+      abilityCache,
+    ],
   );
 
   const handlers = createCommandHandlers({

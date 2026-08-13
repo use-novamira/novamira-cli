@@ -287,6 +287,14 @@ export function createCommandHandlers(
         };
       }),
 
+    sitesRename: (name, newName, options) =>
+      execute(options, async () => {
+        const renamed = await profiles.rename(name, newName);
+        return {
+          data: { renamed: renamed.name, siteUrl: renamed.siteUrl },
+        };
+      }),
+
     discover: (options) =>
       execute(options, async () => {
         const { abilities, meta } = await createAbilityContext(options);

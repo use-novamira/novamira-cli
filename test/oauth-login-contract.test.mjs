@@ -39,6 +39,7 @@ function commandHandlers(overrides = {}) {
     authLogout: noop,
     sitesList: noop,
     sitesRemove: noop,
+    sitesRename: noop,
     discover: noop,
     describe: noop,
     run: noop,

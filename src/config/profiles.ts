@@ -48,6 +48,15 @@ export interface ProfileCleanupHook {
   cleanup(profile: SiteProfile): Promise<void>;
 }
 
+/**
+ * Migrates per-profile sidecar state when a profile is renamed. Runs while the
+ * old and new profile locks are both held, before the profile document is
+ * rewritten, so it can move records keyed by the old name to the new one.
+ */
+export interface ProfileRenameHook {
+  rename(from: SiteProfile, toName: string): Promise<void>;
+}
+
 export interface SelectionEnvironment {
   readonly NOVAMIRA_SITE?: string;
 }
@@ -145,6 +154,7 @@ export class ProfileStore {
     private readonly security: FileSecurity,
     private readonly cleanupHooks: readonly ProfileCleanupHook[] = [],
     private readonly environment: SiteUrlEnvironment = process.env,
+    private readonly renameHooks: readonly ProfileRenameHook[] = [],
   ) {}
 
   async list(): Promise<SiteProfile[]> {
@@ -229,6 +239,72 @@ export class ProfileStore {
       });
       return profile;
     });
+  }
+
+  async rename(name: string, newName: string): Promise<SiteProfile> {
+    const currentName = validateProfileName(name);
+    const renamed = validateProfileName(newName);
+    if (currentName === renamed) {
+      throw new CliError(
+        "usage_error",
+        "The new profile name must differ from the current name.",
+      );
+    }
+    // Acquire both profile locks in a deterministic order so two renames that
+    // cross (A -> B and B -> A) cannot deadlock, and so the target name is
+    // reserved while credentials and caches move to it.
+    const [first, second] =
+      currentName < renamed ? [currentName, renamed] : [renamed, currentName];
+    return this.locks.withLock(first, () =>
+      this.locks.withLock(second, () =>
+        this.renameWithLocksHeld(currentName, renamed),
+      ),
+    );
+  }
+
+  private async renameWithLocksHeld(
+    name: string,
+    newName: string,
+  ): Promise<SiteProfile> {
+    const document = await this.readDocument();
+    const profile = document.profiles[name];
+    if (profile === undefined) {
+      throw new CliError(
+        "site_not_found",
+        `Site profile ${name} was not found.`,
+      );
+    }
+    if (document.profiles[newName] !== undefined) {
+      throw new CliError(
+        "usage_error",
+        `Site profile ${newName} already exists.`,
+      );
+    }
+    for (const hook of this.renameHooks) await hook.rename(profile, newName);
+    await this.locks.withLock("__profile_document__", async () => {
+      const current = await this.readDocument();
+      const source = current.profiles[name];
+      if (source === undefined) {
+        throw new CliError(
+          "site_not_found",
+          `Site profile ${name} was not found.`,
+        );
+      }
+      if (current.profiles[newName] !== undefined) {
+        throw new CliError(
+          "usage_error",
+          `Site profile ${newName} already exists.`,
+        );
+      }
+      const profiles = {
+        ...Object.fromEntries(
+          Object.entries(current.profiles).filter(([key]) => key !== name),
+        ),
+        [newName]: { ...source, name: newName },
+      };
+      await this.writeDocument({ ...current, profiles });
+    });
+    return { ...profile, name: newName };
   }
 
   async select(

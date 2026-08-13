@@ -75,6 +75,7 @@ novamira auth status
 novamira auth logout
 novamira sites list
 novamira sites remove <name>
+novamira sites rename <name> <new-name>
 novamira discover
 novamira describe <ability>
 novamira run <ability> [--input <json|@file|->] [--fresh]
@@ -120,6 +121,15 @@ Global options are `--site <name>`, `--json`, `--timeout <ms>`, `--yes`, `--max-
 `update` reads the `latest` dist-tag of `@novamira/cli` from the npm registry (or `NOVAMIRA_REGISTRY`) over HTTPS and, unless `--check` is given, installs that version with the package manager that owns the installation (`npm install --global --ignore-scripts --registry <registry>`, or `bun add --global --registry <registry>` for a Bun global installation), always from the registry the version was read from. Installer output goes to stderr only; an explicitly given `--timeout` bounds the installer process as well as the registry request. After any other successful command, the same anonymous dist-tag request runs at most once per 24 hours and prints one stderr warning when a newer version is published; the record lives in `state/update-check.json` as `{ "version": 1, "registry": string, "latest": string|null, "checkedAt": string }` under the shared lock (held across the request so concurrent commands make one request), atomic replacement, and owner-only modes. A record written for a different registry is never reused. The notice never changes stdout, an exit code, or a command's outcome, and every check failure is silent. It is suppressed by `--quiet`, by `doctor --offline`, and by `NOVAMIRA_UPDATE_CHECK=0`. The request sends no profile, site, credential, or telemetry data.
 
 Target selection order is `--site`, `NOVAMIRA_SITE`, the sole configured profile, then `site_required`. No command picks one profile from multiple profiles.
+
+`sites rename <name> <new-name>` renames a profile without changing its origin,
+site base, OAuth client, or grant. The new name must be a valid profile name,
+differ from the current name, and not already be in use; otherwise the command
+fails with `site_not_found` or `usage_error` and nothing changes. Stored OAuth
+credentials move to the record keyed by the new name, the old profile's Ability
+cache entries are invalidated, and the profile document is atomically replaced
+under both profile locks. No cleanup hook runs, so a rename never deletes
+credentials or caches.
 
 ## Output and errors
 

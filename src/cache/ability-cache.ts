@@ -10,7 +10,11 @@ import type {
   VerifiedFileSecurity,
 } from "../config/file-security.js";
 import type { ProfileLockManager } from "../config/lock.js";
-import type { ProfileCleanupHook, SiteProfile } from "../config/profiles.js";
+import type {
+  ProfileCleanupHook,
+  ProfileRenameHook,
+  SiteProfile,
+} from "../config/profiles.js";
 import { isCredentialClassifiedResult } from "../security/classify.js";
 
 export const ABILITY_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -138,7 +142,9 @@ function sameKey(left: AbilityCacheKey, right: AbilityCacheKey): boolean {
   );
 }
 
-export class AbilityMetadataCache implements ProfileCleanupHook {
+export class AbilityMetadataCache
+  implements ProfileCleanupHook, ProfileRenameHook
+{
   private readonly directory: string;
   private readonly ttlMs: number;
   private readonly budgetBytes: number;
@@ -313,6 +319,15 @@ export class AbilityMetadataCache implements ProfileCleanupHook {
     await this.locks.withLock("__ability_cache__", async () => {
       await this.cleanupUnlocked();
     });
+  }
+
+  // Cache keys embed the profile name, so entries written under the old name
+  // are stale after a rename. Invalidation is cheaper and safer than moving
+  // files; the next discovery or describe refetches them. The target name is
+  // irrelevant because the old profile's entries are the stale ones.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async rename(from: SiteProfile, _toName: string): Promise<void> {
+    await this.invalidateProfile(from.origin, from.name);
   }
 
   async cleanupExpired(): Promise<AbilityCacheCleanupResult> {

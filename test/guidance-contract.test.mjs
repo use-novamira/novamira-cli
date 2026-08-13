@@ -33,6 +33,7 @@ test("bundled guidance is complete, consistent, and safely opinionated", async (
   assert.ok(full.content.startsWith(short.content));
   for (const required of [
     "sites list",
+    "sites rename",
     "--site <profile>",
     "doctor --json",
     "discover --json",

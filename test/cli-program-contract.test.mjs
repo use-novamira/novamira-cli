@@ -42,6 +42,11 @@ test("the command tree routes named arguments and command-specific options", asy
       name: "sitesRemove",
       args: ["production"],
     },
+    {
+      argv: ["sites", "rename", "staging", "staging-2"],
+      name: "sitesRename",
+      args: ["staging", "staging-2"],
+    },
     { argv: ["discover"], name: "discover", args: [] },
     {
       argv: ["describe", "novamira/example"],
@@ -104,6 +109,7 @@ test("Commander rejects missing required arguments before invoking a handler", a
   const cases = [
     ["auth", "login"],
     ["sites", "remove"],
+    ["sites", "rename", "staging"],
     ["describe"],
     ["run"],
     ["skill", "get"],
