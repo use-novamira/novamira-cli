@@ -117,7 +117,8 @@ test("backend selection prefers an available OS service, passes secrets only on 
     const executor = {
       execute: async (command, args, stdin = "") => {
         calls.push({ command, args, stdin });
-        if (args[0] === "--version") return { code: 0, stdout: "1\n" };
+        // Ubuntu's secret-tool prints usage and exits 2 with no arguments.
+        if (args.length === 0) return { code: 2, stdout: "" };
         if (args[0] === "store") {
           stored = stdin;
           return { code: 0, stdout: "" };
@@ -143,6 +144,11 @@ test("backend selection prefers an available OS service, passes secrets only on 
         executor,
       },
     );
+    assert.deepEqual(calls[0], {
+      command: "secret-tool",
+      args: [],
+      stdin: "",
+    });
     await keychain.replace(target, first);
     assert.deepEqual(await keychain.read(target), first);
     assert.equal(keychain.diagnostic().backend, "linux-secret-service");

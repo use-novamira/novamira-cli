@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Linux: Secret Service credential storage is now detected when the installed
+  `secret-tool` does not support the non-portable `--version` option.
 - Windows: OAuth credentials with realistic access and refresh token lengths
   now fit within Credential Manager's credential-blob limit.
 

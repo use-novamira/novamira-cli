@@ -116,9 +116,10 @@ export class MacOsKeychainBackend extends CommandCredentialBackend {
 export class LinuxSecretServiceBackend extends CommandCredentialBackend {
   async probe(): Promise<boolean> {
     try {
-      return (
-        (await this.executor.execute("secret-tool", ["--version"])).code === 0
-      );
+      // secret-tool has no portable version flag. Any completed invocation
+      // proves the executable is present, even when usage errors exit nonzero.
+      await this.executor.execute("secret-tool", []);
+      return true;
     } catch (error) {
       if (error instanceof BackendUnavailableError) return false;
       return false;
