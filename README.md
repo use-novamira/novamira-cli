@@ -30,8 +30,16 @@ irm https://raw.githubusercontent.com/use-novamira/novamira-cli/main/install.ps1
 ```
 
 The installer uses npm to install the CLI, runs the offline doctor, and installs
-the Novamira skill globally for the agent you select. Alternatively, install and
-verify the CLI manually:
+the Novamira skill globally for the agent you select. For unattended use, set
+`NOVAMIRA_AGENT` to the target agent, or set `NOVAMIRA_SKIP_SKILL=1` to install
+only the CLI:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/use-novamira/novamira-cli/main/install.sh |
+  NOVAMIRA_AGENT=opencode sh
+```
+
+Alternatively, install and verify the CLI manually:
 
 ```sh
 npm install -g @novamira/cli --ignore-scripts

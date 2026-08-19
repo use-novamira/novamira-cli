@@ -67,23 +67,28 @@ if (-not (Test-Path -LiteralPath $skillFile -PathType Leaf)) {
   Fail "the installed npm package does not contain the Novamira agent skill"
 }
 
-Write-Output "`nInstalling the Novamira agent skill globally..."
-$agent = [Environment]::GetEnvironmentVariable("NOVAMIRA_AGENT")
-$oldDisableTelemetry = [Environment]::GetEnvironmentVariable("DISABLE_TELEMETRY")
-$oldIgnoreScripts = [Environment]::GetEnvironmentVariable("npm_config_ignore_scripts")
-try {
-  [Environment]::SetEnvironmentVariable("DISABLE_TELEMETRY", "1")
-  [Environment]::SetEnvironmentVariable("npm_config_ignore_scripts", "true")
-  $skillArguments = @("--yes", $skillsPackage, "add", $skillSource, "--skill", "novamira", "--global")
-  if (-not [string]::IsNullOrWhiteSpace($agent)) {
-    $skillArguments += @("--agent", $agent, "--yes")
-  } elseif ([Console]::IsInputRedirected) {
-    Fail "skill installation needs a terminal or NOVAMIRA_AGENT (for example, NOVAMIRA_AGENT=opencode)"
+$skipSkill = [Environment]::GetEnvironmentVariable("NOVAMIRA_SKIP_SKILL")
+if ($skipSkill -eq "1") {
+  Write-Output "`nSkipping Novamira agent skill installation."
+} else {
+  Write-Output "`nInstalling the Novamira agent skill globally..."
+  $agent = [Environment]::GetEnvironmentVariable("NOVAMIRA_AGENT")
+  $oldDisableTelemetry = [Environment]::GetEnvironmentVariable("DISABLE_TELEMETRY")
+  $oldIgnoreScripts = [Environment]::GetEnvironmentVariable("npm_config_ignore_scripts")
+  try {
+    [Environment]::SetEnvironmentVariable("DISABLE_TELEMETRY", "1")
+    [Environment]::SetEnvironmentVariable("npm_config_ignore_scripts", "true")
+    $skillArguments = @("--yes", $skillsPackage, "add", $skillSource, "--skill", "novamira", "--global")
+    if (-not [string]::IsNullOrWhiteSpace($agent)) {
+      $skillArguments += @("--agent", $agent, "--yes")
+    } elseif ([Console]::IsInputRedirected) {
+      Fail "set NOVAMIRA_AGENT for unattended skill installation, or NOVAMIRA_SKIP_SKILL=1"
+    }
+    Invoke-Checked $npx $skillArguments
+  } finally {
+    [Environment]::SetEnvironmentVariable("DISABLE_TELEMETRY", $oldDisableTelemetry)
+    [Environment]::SetEnvironmentVariable("npm_config_ignore_scripts", $oldIgnoreScripts)
   }
-  Invoke-Checked $npx $skillArguments
-} finally {
-  [Environment]::SetEnvironmentVariable("DISABLE_TELEMETRY", $oldDisableTelemetry)
-  [Environment]::SetEnvironmentVariable("npm_config_ignore_scripts", $oldIgnoreScripts)
 }
 
-Write-Output "`nNovamira CLI and agent skill installed successfully."
+Write-Output "`nNovamira CLI installation completed successfully."

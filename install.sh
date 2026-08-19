@@ -36,17 +36,21 @@ skill_source=$(npm root --global)/@novamira/cli
 [ -f "$skill_source/skills/novamira/SKILL.md" ] ||
   fail "the installed npm package does not contain the Novamira agent skill"
 
-printf '\nInstalling the Novamira agent skill globally...\n'
-if [ -n "${NOVAMIRA_AGENT:-}" ]; then
-  DISABLE_TELEMETRY=1 npm_config_ignore_scripts=true \
-    npx --yes "$skills_package" add "$skill_source" \
-    --skill novamira --global --agent "$NOVAMIRA_AGENT" --yes
-elif [ -r /dev/tty ] && [ -w /dev/tty ]; then
-  DISABLE_TELEMETRY=1 npm_config_ignore_scripts=true \
-    npx --yes "$skills_package" add "$skill_source" \
-    --skill novamira --global </dev/tty
+if [ "${NOVAMIRA_SKIP_SKILL:-0}" = "1" ]; then
+  printf '\nSkipping Novamira agent skill installation.\n'
 else
-  fail "skill installation needs a terminal or NOVAMIRA_AGENT (for example, NOVAMIRA_AGENT=opencode)"
+  printf '\nInstalling the Novamira agent skill globally...\n'
+  if [ -n "${NOVAMIRA_AGENT:-}" ]; then
+    DISABLE_TELEMETRY=1 npm_config_ignore_scripts=true \
+      npx --yes "$skills_package" add "$skill_source" \
+      --skill novamira --global --agent "$NOVAMIRA_AGENT" --yes
+  elif ( : </dev/tty ) 2>/dev/null; then
+    DISABLE_TELEMETRY=1 npm_config_ignore_scripts=true \
+      npx --yes "$skills_package" add "$skill_source" \
+      --skill novamira --global </dev/tty
+  else
+    fail "set NOVAMIRA_AGENT for unattended skill installation, or NOVAMIRA_SKIP_SKILL=1"
+  fi
 fi
 
-printf '\nNovamira CLI and agent skill installed successfully.\n'
+printf '\nNovamira CLI installation completed successfully.\n'
