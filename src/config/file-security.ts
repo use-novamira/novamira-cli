@@ -33,7 +33,8 @@ export interface VerifiedFileSecurity extends FileSecurity {
   // only a failure of the checker itself rejects. An empty list inspects
   // nothing and starts no process.
   verifyMany(targets: readonly AclTarget[]): Promise<readonly boolean[]>;
-  // Hardens every target. Rejects unless every target ends owner-only.
+  // Hardens every target. Rejects unless every target ends within the
+  // platform's storage policy.
   secureMany(targets: readonly AclTarget[]): Promise<void>;
 }
 
@@ -277,42 +278,185 @@ const UNSAFE_ACL_EXIT_CODE = 3;
 const SAFE_RESULT = "safe";
 const UNSAFE_RESULT = "unsafe";
 
-// The per-target ACL work, shared by the single-path and batch scripts. It
-// reads `$sid`, `$path`, `$directory`, and `$action`, and leaves the verdict in
-// `$safe`.
+// The two administrative principals a private storage ACL may also grant, as
+// literal SIDs: `S-1-5-18` is SYSTEM and `S-1-5-32-544` is the local
+// Administrators group. They are well-known, machine-independent, and identical
+// on every Windows installation, which is exactly why they are written as SIDs.
+// A localized machine reports them as `NT AUTHORITY\SYSTEM` or `NT instans\
+// SYSTEM`, and `BUILTIN\Administrators` or `BUILTIN\Administratörer`; comparing
+// those names would make the policy depend on the display language.
 //
-// `apply` mutates the object `Get-Acl` returns instead of constructing a fresh
-// `DirectorySecurity`/`FileSecurity`. A newly constructed security object marks
-// every section dirty, so `Set-Acl` also tries to write the SACL, which needs
-// SeSecurityPrivilege and therefore fails for ordinary accounts even when the
-// resulting DACL would have been correct. Mutating the fetched object marks
-// only the owner and DACL sections.
+// Neither is required. Owner-only remains a valid shape, and this list is the
+// complete set of additions: every other principal fails.
+const PERMITTED_ADMINISTRATIVE_SIDS = ["S-1-5-18", "S-1-5-32-544"] as const;
+
+// Reads `$sid`, `$path`, and `$directory`, and leaves the verdict in `$safe`.
 //
-// A `Set-Acl` failure is recorded rather than raised: the verification below is
-// the authority, so a privilege error over an ACL that is already owner-only is
-// not a failure, while a genuinely unsafe result still is.
-const ACL_TARGET_BODY = [
-  "$safe=$false",
-  "$applyError=''",
-  `if($action -eq 'apply'){try{${[
-    "$acl=Get-Acl -LiteralPath $path",
-    "$current=$acl.GetOwner([System.Security.Principal.SecurityIdentifier])",
-    "if($null -eq $current -or $current.Value -ne $sid.Value){$acl.SetOwner($sid)}",
-    "$acl.SetAccessRuleProtection($true,$false)",
-    "foreach($existing in @($acl.GetAccessRules($true,$false,[System.Security.Principal.SecurityIdentifier]))){$acl.PurgeAccessRules($existing.IdentityReference)}",
-    "$inherit=if($directory){[System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[System.Security.AccessControl.InheritanceFlags]::None}",
-    "$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid,[System.Security.AccessControl.FileSystemRights]::FullControl,$inherit,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow))",
-    "Set-Acl -LiteralPath $path -AclObject $acl",
-  ].join(";")}}catch{$applyError=$_.Exception.Message}}`,
+// A private storage object is safe when the DACL is protected from inheritance,
+// the owner is the current user, and every access rule on it is one this policy
+// permits. Each rule is judged on its own, and the administrative principals are
+// held to exactly the requirements the owner's own rule is held to: explicit,
+// Allow, FullControl, the inheritance shape the object kind requires, no
+// propagation flags, and no second rule for the same principal. The current
+// user's rule is mandatory; the other two are optional. Anything else - an
+// unexpected principal, an inherited rule, a Deny, a partial right, a stray
+// propagation flag, a duplicate - fails.
+//
+// Counting rules is not a policy. The previous predicate required exactly one
+// rule, which rejected a DACL that granted SYSTEM and Administrators before it
+// ever considered who those principals were; it also never examined Deny,
+// inheritance flags, propagation flags, or duplicates, because one rule that
+// matched the owner made all of that unreachable. Judging every rule is both
+// stricter, on four properties that previously went unchecked, and narrower in
+// exactly one respect: two named administrative SIDs may also appear.
+const ACL_EVALUATE = [
   "$actual=Get-Acl -LiteralPath $path",
+  // Explicit and inherited alike, translated to SIDs. An inherited rule is
+  // rejected below rather than filtered out here: it must fail the policy, not
+  // silently disappear from it.
   "$rules=@($actual.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]))",
   // `$actual.Owner` is the translated NTAccount form (`COMPUTER\user`),
   // which never equals an SID string. Compare SID to SID.
   "$owner=$actual.GetOwner([System.Security.Principal.SecurityIdentifier])",
-  "$safe=$actual.AreAccessRulesProtected -and $null -ne $owner -and $owner.Value -eq $sid.Value -and $rules.Count -eq 1 -and $rules[0].IdentityReference.Value -eq $sid.Value -and $rules[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and (($rules[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl)",
+  `$permitted=@($sid.Value,${PERMITTED_ADMINISTRATIVE_SIDS.map((sid) => `'${sid}'`).join(",")})`,
+  "$wantInherit=if($directory){[System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[System.Security.AccessControl.InheritanceFlags]::None}",
+  "$seen=@()",
+  "$rulesOk=$true",
+  `foreach($rule in $rules){${[
+    "$identity=$rule.IdentityReference.Value",
+    "if($rule.IsInherited){$rulesOk=$false}",
+    "if($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow){$rulesOk=$false}",
+    "if($permitted -notcontains $identity){$rulesOk=$false}",
+    "if(($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl){$rulesOk=$false}",
+    "if($rule.InheritanceFlags -ne $wantInherit){$rulesOk=$false}",
+    "if($rule.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None){$rulesOk=$false}",
+    "if($seen -contains $identity){$rulesOk=$false}",
+    "$seen+=$identity",
+  ].join(";")}}`,
+  "$safe=$actual.AreAccessRulesProtected -and $null -ne $owner -and $owner.Value -eq $sid.Value -and $rules.Count -ge 1 -and $rules.Count -le $permitted.Count -and $rulesOk -and ($seen -contains $sid.Value)",
+].join(";");
+
+// Brings an unsafe object to the exact shape `ACL_EVALUATE` accepts.
+//
+// Every explicit rule is purged and the accepted ones are re-added in canonical
+// form, rather than edited in place. A rule that is preserved untouched would
+// have to be proved correct in every respect first - rights, type, inheritance,
+// propagation, uniqueness - and re-adding it canonically reaches the same state
+// with no such proof, which is why an insufficient, denied, duplicated, or
+// wrongly flagged administrative rule needs no separate repair path.
+//
+// An administrative principal is re-added only when the descriptor that arrived
+// was already protected, denied nothing at all - explicitly or by inheritance -
+// and held an explicit Allow for that exact SID. `Deny`-only means no access to
+// preserve; a Deny alongside the Allow means access somebody explicitly
+// refused, and granting it would broaden the descriptor rather than repair it;
+// and an unprotected descriptor cannot be trusted to still show a refusal an
+// ancestor's earlier repair may already have removed. An inherited grant is
+// precisely what protecting the DACL is meant to sever - so a freshly created
+// directory, which inherits rather than carries explicit rules, still hardens
+// to owner-only exactly as before.
+//
+// It fetches and writes through `FileSystemInfo.GetAccessControl` and
+// `SetAccessControl` with the owner and access sections named explicitly,
+// rather than through `Get-Acl`/`Set-Acl`. `Set-Acl` decides for itself which
+// sections to persist and reaches for the SACL, which needs SeSecurityPrivilege
+// and fails for an ordinary account even when the DACL it would have written
+// was correct - observed against a protected descriptor that had been built
+// through this same API. Naming the sections keeps the write to exactly the
+// owner and the DACL, and never the group or the SACL.
+const ACL_REPAIR = [
+  "$item=Get-Item -LiteralPath $path -Force",
+  "$sections=[System.Security.AccessControl.AccessControlSections]::Owner -bor [System.Security.AccessControl.AccessControlSections]::Access",
+  "$acl=$item.GetAccessControl($sections)",
+  "$current=$acl.GetOwner([System.Security.Principal.SecurityIdentifier])",
+  "if($null -eq $current -or $current.Value -ne $sid.Value){$acl.SetOwner($sid)}",
+  // Read before anything is purged: the decision to keep an administrative
+  // principal is made from the descriptor that arrived, not from the one being
+  // built.
+  //
+  // An explicit Allow proposes an optional administrative principal, and ANY
+  // Deny anywhere in the incoming DACL vetoes all of them. The veto is
+  // deliberately global rather than per-SID:
+  //
+  //   - An inherited Deny is invisible to an explicit-only scan, and repair
+  //     protects the DACL, which severs inheritance. Reading explicit rules
+  //     alone would let an inherited refusal be dropped and the principal then
+  //     re-added as FullControl.
+  //   - A Deny naming some other principal can still constrain SYSTEM or
+  //     Administrators through group membership, and resolving Windows tokens
+  //     and nested groups is far outside what this predicate can do safely.
+  //
+  // So the conservative rule is the one that cannot escalate: if the incoming
+  // descriptor denies anything at all, no optional administrative principal is
+  // preserved. Repair may then narrow access, which is safe, but it can never
+  // convert a refusal into full control. Both lists are collected in one pass
+  // over the whole DACL, so ACE ordering cannot change the outcome.
+  //
+  // The incoming protection state is the third precondition, and it must be
+  // read here, before `SetAccessRuleProtection` below makes every descriptor
+  // look protected and the safeguard inert.
+  //
+  // It exists because `doctor --fix` repairs a whole storage tree in one pass,
+  // parent before child, and repairing a parent strips its Deny. An unprotected
+  // child that inherited that Deny would then be judged a moment later against
+  // a descriptor from which the refusal had already vanished, and its own
+  // explicit administrative Allows would be restored as FullControl - widening
+  // access across the pair even though every single-target decision was
+  // individually correct.
+  //
+  // An unprotected DACL is exactly the state in which that can happen, and it
+  // is also a state this policy rejects outright, so nothing is lost by
+  // refusing to preserve optional access from it: such a target is repaired
+  // conservatively to owner-only. A protected descriptor cannot have inherited
+  // anything, so what it carries is what its administrator wrote.
+  "$wasProtected=$acl.AreAccessRulesProtected",
+  // The current user is exempt from all three preconditions: their rule is the
+  // mandatory policy boundary rather than optional preserved access, and it is
+  // written unconditionally below whatever the previous descriptor said.
+  `$allowed=@()`,
+  "$anyDeny=$false",
+  `foreach($existing in @($acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]))){${[
+    "if($existing.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Deny){$anyDeny=$true;continue}",
+    "$identity=$existing.IdentityReference.Value",
+    // Only an explicit Allow proposes a principal: an inherited grant is
+    // exactly what protecting the DACL is meant to sever.
+    "if($existing.IsInherited){continue}",
+    `if(@(${PERMITTED_ADMINISTRATIVE_SIDS.map((sid) => `'${sid}'`).join(",")}) -notcontains $identity){continue}`,
+    "if($allowed -notcontains $identity){$allowed+=$identity}",
+  ].join(";")}}`,
+  "$keep=@(if($wasProtected -and -not $anyDeny){$allowed}else{@()})",
+  "$acl.SetAccessRuleProtection($true,$false)",
+  "foreach($existing in @($acl.GetAccessRules($true,$false,[System.Security.Principal.SecurityIdentifier]))){$acl.PurgeAccessRules($existing.IdentityReference)}",
+  "$inherit=if($directory){[System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[System.Security.AccessControl.InheritanceFlags]::None}",
+  // The owner's rule is mandatory and is written first.
+  "$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid,[System.Security.AccessControl.FileSystemRights]::FullControl,$inherit,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow))",
+  "foreach($identity in $keep){$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new([System.Security.Principal.SecurityIdentifier]::new($identity),[System.Security.AccessControl.FileSystemRights]::FullControl,$inherit,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow))}",
+  "$item.SetAccessControl($acl)",
+].join(";");
+
+// The per-target ACL work, shared by the single-path and batch scripts. It
+// reads `$sid`, `$path`, `$directory`, and `$action`, and leaves the verdict in
+// `$safe`.
+//
+// The object is judged before anything is written, and `apply` repairs only
+// what the judgement rejected. An ACL that already verifies is left exactly as
+// it is - no ACL write, no owner write, no descriptor change - which is what
+// makes a second `apply`, and `doctor --fix` over already-safe storage, produce
+// no churn at all.
+//
+// An apply failure is recorded rather than raised: the verification below is
+// the authority, so a privilege error over an ACL that is already correct is
+// not a failure, while a genuinely unsafe result still is.
+const ACL_TARGET_BODY = [
+  "$safe=$false",
+  "$applyError=''",
+  ACL_EVALUATE,
+  `if($action -eq 'apply' -and -not $safe){try{${ACL_REPAIR}}catch{$applyError=$_.Exception.Message};${ACL_EVALUATE}}`,
   // Single quotes only: a double quote here would have to survive Node's
-  // Windows argument escaping on the way to powershell.exe.
-  "if(-not $safe){[Console]::Error.WriteLine('unsafe path=' + $path + ' protected=' + $actual.AreAccessRulesProtected + ' owner=' + $owner.Value + ' expected=' + $sid.Value + ' rules=' + $rules.Count + ' identity=' + $rules[0].IdentityReference.Value + ' type=' + $rules[0].AccessControlType + ' rights=' + $rules[0].FileSystemRights + ' apply=' + $applyError)}",
+  // Windows argument escaping on the way to powershell.exe. The identities are
+  // joined rather than indexed, so an empty DACL reports itself instead of
+  // failing on `$rules[0]`.
+  "if(-not $safe){[Console]::Error.WriteLine('unsafe path=' + $path + ' protected=' + $actual.AreAccessRulesProtected + ' owner=' + $owner.Value + ' expected=' + $sid.Value + ' rules=' + $rules.Count + ' identities=' + ($seen -join ',') + ' rulesOk=' + $rulesOk + ' apply=' + $applyError)}",
 ].join(";");
 
 const CURRENT_SID =
@@ -350,7 +494,7 @@ export class WindowsFileSecurity implements VerifiedFileSecurity {
     const failed = results.filter((safe) => !safe).length;
     if (failed > 0)
       throw new Error(
-        `powershell.exe could not apply an owner-only ACL to ${String(failed)} of ${String(targets.length)} paths`,
+        `powershell.exe could not establish the required Windows storage ACL on ${String(failed)} of ${String(targets.length)} paths`,
       );
   }
 
@@ -360,8 +504,8 @@ export class WindowsFileSecurity implements VerifiedFileSecurity {
       this.arguments(path, directory, "apply"),
     );
     if (code === 0) return;
-    // Windows can refuse `Set-Acl` for want of SeSecurityPrivilege even when
-    // the owner-only ACL it would have written is already in place. Only a
+    // Windows can refuse the ACL write for want of SeSecurityPrivilege even
+    // when the ACL it would have written is already in place. Only a
     // postcondition that verifies as safe rescues the failure; an unsafe or
     // unreadable one stays an error, so the security contract never weakens.
     let verified = false;

@@ -451,13 +451,22 @@ test("locks coordinate independent managers, stale owners recover, and failed at
     );
     assert.ok(calls[0][1][5].includes("$path='C:\\State'"));
 
-    // `Set-Acl` over a freshly constructed security object marks every section
-    // dirty, so Windows demands SeSecurityPrivilege for the SACL and refuses
-    // the write on ordinary accounts even when the resulting DACL would be
-    // correct. The script must mutate the object `Get-Acl` returned, and must
-    // let the verification below decide, rather than raising the Set-Acl error.
+    // Writing a security object marks sections dirty, and any write that
+    // reaches the SACL demands SeSecurityPrivilege and is refused on ordinary
+    // accounts even when the resulting DACL would be correct. The script must
+    // therefore fetch and write exactly the owner and access sections, must
+    // mutate what it fetched rather than construct a fresh security object,
+    // and must let the verification below decide rather than raising the write
+    // error. `Set-Acl` chooses its own sections, so it is not used at all.
     const applyScript = calls[0][1][5];
-    assert.ok(applyScript.includes("$acl=Get-Acl -LiteralPath $path"));
+    assert.ok(
+      applyScript.includes(
+        "$sections=[System.Security.AccessControl.AccessControlSections]::Owner -bor [System.Security.AccessControl.AccessControlSections]::Access",
+      ),
+    );
+    assert.ok(applyScript.includes("$acl=$item.GetAccessControl($sections)"));
+    assert.ok(applyScript.includes("$item.SetAccessControl($acl)"));
+    assert.equal(applyScript.includes("Set-Acl "), false);
     assert.ok(!applyScript.includes("DirectorySecurity]::new()"));
     assert.ok(!applyScript.includes("FileSecurity]::new()"));
     assert.ok(
@@ -542,9 +551,9 @@ test("a batch that fails part way keeps the records it already replaced", async 
   }
 });
 
-test("a failed Set-Acl succeeds only when the postcondition verifies as safe", async () => {
-  // Windows reports a missing SeSecurityPrivilege even when the owner-only ACL
-  // it was asked to write is already in place.
+test("a failed apply succeeds only when the postcondition verifies as safe", async () => {
+  // Windows reports a missing SeSecurityPrivilege even when the ACL it was
+  // asked to write is already in place.
   const scripts = [];
   const rescued = new WindowsFileSecurity({
     run: async (_command, args) => {
@@ -576,6 +585,186 @@ test("a failed Set-Acl succeeds only when the postcondition verifies as safe", a
     },
   });
   await assert.rejects(unreadable.secureDirectory("C:\\State"), /status 1/);
+});
+
+test("the Windows storage policy is expressed over every rule, by SID", async () => {
+  // Structural only, and deliberately so. These assertions prove what the
+  // generated script says; they cannot prove what Windows does with it, and
+  // the `$args` defect is the standing reminder that the two can differ. The
+  // executable proof - real descriptors, real powershell.exe, real verdicts -
+  // is scripts/windows-acl-acceptance.mjs, which CI runs on windows-latest.
+  const scripts = [];
+  const security = new WindowsFileSecurity({
+    run: async (_command, args) => {
+      scripts.push(args[5]);
+      return 0;
+    },
+    runWithInput: async (_command, args) => {
+      scripts.push(args[5]);
+      return { code: 0, stdout: "safe\n" };
+    },
+  });
+  await security.verifyDirectory("C:\\State");
+  await security.verifyFile("C:\\State\\config.json");
+  await security.secureDirectory("C:\\State");
+  await security.verifyMany([{ path: "C:\\State", kind: "directory" }]);
+
+  for (const script of scripts) {
+    // The permitted set is the current user plus exactly two well-known
+    // administrative SIDs, written as SIDs so a localized `BUILTIN\
+    // Administratörer` cannot change the outcome.
+    assert.ok(
+      script.includes("$permitted=@($sid.Value,'S-1-5-18','S-1-5-32-544')"),
+      "the permitted principals must be the current user, SYSTEM, and Administrators",
+    );
+    assert.equal(script.includes("NTAccount"), false);
+    // Every rule is judged, and each requirement applies to all of them.
+    assert.ok(script.includes("foreach($rule in $rules)"));
+    for (const clause of [
+      "if($rule.IsInherited){$rulesOk=$false}",
+      "if($permitted -notcontains $identity){$rulesOk=$false}",
+      "if($seen -contains $identity){$rulesOk=$false}",
+      "$rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow",
+      "$rule.InheritanceFlags -ne $wantInherit",
+      "$rule.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None",
+    ])
+      assert.ok(script.includes(clause), `missing policy clause: ${clause}`);
+    // The owner's rule is mandatory, the administrative ones are not, and the
+    // count is bounded by the permitted set rather than fixed at one.
+    assert.ok(script.includes("($seen -contains $sid.Value)"));
+    assert.ok(script.includes("$rules.Count -ge 1"));
+    assert.ok(script.includes("$rules.Count -le $permitted.Count"));
+    assert.equal(script.includes("$rules.Count -eq 1"), false);
+    // An empty DACL must report itself rather than index a rule that is not
+    // there.
+    assert.equal(script.includes("$rules[0]"), false);
+    // Rules are read explicit-and-inherited, so an inherited rule is refused
+    // by the policy rather than filtered out before it is seen.
+    assert.ok(script.includes("GetAccessRules($true,$true,"));
+  }
+
+  const [verifyDirectory, verifyFile, applyDirectory] = scripts;
+  assert.ok(
+    verifyDirectory.includes(
+      "$wantInherit=if($directory){[System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[System.Security.AccessControl.InheritanceFlags]::None}",
+    ),
+    "the required inheritance shape must follow the target kind",
+  );
+  assert.ok(/\$directory=\$true/.test(verifyDirectory));
+  assert.ok(/\$directory=\$false/.test(verifyFile));
+
+  // The script text is one shared body; `$action` is what decides at runtime
+  // whether the repair branch runs at all, so verification is a matter of the
+  // value bound here rather than of a different script.
+  assert.ok(/\$action='verify'/.test(verifyDirectory));
+  assert.ok(/\$action='verify'/.test(verifyFile));
+  assert.ok(/\$action='apply'/.test(applyDirectory));
+  assert.ok(
+    applyDirectory.includes("if($action -eq 'apply' -and -not $safe){"),
+    "an ACL that already verifies must not be rewritten",
+  );
+  // An administrative principal is carried across the purge only when the
+  // descriptor that arrived held an explicit Allow for it and denied nothing at
+  // all. The executable proof that a denied principal is not re-granted - over
+  // real inherited descriptors - lives in the Windows acceptance script; these
+  // assertions only pin the shape of the decision the script encodes.
+  assert.ok(
+    applyDirectory.includes(
+      "if(@('S-1-5-18','S-1-5-32-544') -notcontains $identity){continue}",
+    ),
+    "only the two optional administrative SIDs may be considered at all",
+  );
+  // The Deny scan reads the whole DACL, explicit and inherited alike, and one
+  // Deny anywhere vetoes every optional principal. An explicit-only scan would
+  // miss an inherited refusal that protecting the DACL then severs, and a
+  // per-SID veto would miss a Deny that reaches SYSTEM or Administrators
+  // through group membership.
+  assert.ok(
+    applyDirectory.includes(
+      "foreach($existing in @($acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]))){if($existing.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Deny){$anyDeny=$true;continue}",
+    ),
+    "the Deny scan must cover explicit and inherited rules and veto globally",
+  );
+  assert.ok(
+    applyDirectory.includes(
+      "$keep=@(if($wasProtected -and -not $anyDeny){$allowed}else{@()})",
+    ),
+    "preservation requires an already-protected descriptor AND no Deny anywhere",
+  );
+  // The incoming protection state is the tree-order safeguard: `doctor --fix`
+  // repairs a parent before its child, which strips the parent's Deny, and an
+  // unprotected child would otherwise be judged against a descriptor the pass
+  // itself had just rewritten. It must be captured before the repair protects
+  // the DACL, or it would always read true and prove nothing.
+  assert.ok(
+    applyDirectory.includes("$wasProtected=$acl.AreAccessRulesProtected"),
+    "the incoming protection state must be captured",
+  );
+  assert.ok(
+    applyDirectory.indexOf("$wasProtected=$acl.AreAccessRulesProtected") <
+      applyDirectory.indexOf("$acl.SetAccessRuleProtection($true,$false)"),
+    "protection must be read before it is set, never after",
+  );
+  assert.equal(
+    applyDirectory.includes("$keep=@(if($anyDeny){@()}else{$allowed})"),
+    false,
+    "the Deny veto alone is not sufficient once a tree is repaired in order",
+  );
+  // An inherited Allow never proposes a principal: it is exactly what
+  // protecting the DACL is meant to sever.
+  assert.ok(
+    applyDirectory.includes("if($existing.IsInherited){continue}"),
+    "only an explicit Allow may propose a principal",
+  );
+  assert.ok(
+    applyDirectory.includes(
+      "if($allowed -notcontains $identity){$allowed+=$identity}",
+    ),
+    "candidates are collected without duplication",
+  );
+  // Both lists are built in a single pass over the whole DACL and the decision
+  // is taken afterwards, so ACE ordering cannot change the outcome.
+  assert.ok(
+    applyDirectory.indexOf("$anyDeny=$true") <
+      applyDirectory.indexOf("$keep=@(if($wasProtected"),
+    "the veto must be collected before the decision is taken",
+  );
+  const decisionAt = applyDirectory.indexOf("$keep=@(if($wasProtected");
+  assert.notEqual(decisionAt, -1, "the retention decision must be present");
+  assert.ok(
+    decisionAt <
+      applyDirectory.indexOf("$acl.SetAccessRuleProtection($true,$false)"),
+    "the retention decision must be made from the descriptor that arrived",
+  );
+  // The purge itself still operates on explicit rules only; inherited ones are
+  // removed by protecting the DACL rather than by purging.
+  assert.ok(applyDirectory.includes("GetAccessRules($true,$false,"));
+  // The owner's rule is mandatory rather than preserved: it is written
+  // unconditionally, outside the `$keep` loop, so a previous owner Deny cannot
+  // stop the policy boundary from being established.
+  assert.ok(
+    applyDirectory.includes(
+      "$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid,[System.Security.AccessControl.FileSystemRights]::FullControl,$inherit,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow))",
+    ),
+  );
+  assert.equal(
+    applyDirectory.includes("$keep -contains $sid.Value"),
+    false,
+    "the owner must not be routed through optional preservation",
+  );
+  // Nothing operator-, principal-, or path-derived is interpolated into the
+  // script text: the only literals are the two build-constant SIDs, and the
+  // path arrives through powerShellLiteral quoting.
+  for (const literal of ["'S-1-5-18'", "'S-1-5-32-544'"])
+    assert.ok(applyDirectory.includes(literal));
+  assert.equal(/\$\{/.test(applyDirectory), false);
+  assert.ok(
+    applyDirectory.includes(
+      "$sections=[System.Security.AccessControl.AccessControlSections]::Owner -bor [System.Security.AccessControl.AccessControlSections]::Access",
+    ),
+  );
+  assert.ok(applyDirectory.includes("$item.SetAccessControl($acl)"));
+  assert.equal(applyDirectory.includes("Set-Acl "), false);
 });
 
 test("batched ACL checks answer per target, in order, without inlining paths", async () => {

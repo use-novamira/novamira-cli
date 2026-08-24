@@ -418,7 +418,7 @@ export class AbilityMetadataCache
     }
   }
 
-  // Rejects unless every freshly written record verifies as owner-only; a
+  // Rejects unless every freshly written record verifies as private; a
   // record that does not is removed, as is the whole batch when the checker
   // itself fails, because nothing about those records is then verifiable.
   private async verifyWrittenUnlocked(paths: readonly string[]): Promise<void> {

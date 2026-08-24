@@ -8,6 +8,10 @@
   `secret-tool` does not support the non-portable `--version` option.
 - Windows: OAuth credentials with realistic access and refresh token lengths
   now fit within Credential Manager's credential-blob limit.
+- Windows: `doctor` now accepts protected storage ACLs that grant the owner and
+  optional SYSTEM or Administrators access; `doctor --fix` preserves those
+  grants only for already-protected, Deny-free ACLs, while Deny and inherited
+  rules remain rejected.
 
 ## 1.1.0
 
