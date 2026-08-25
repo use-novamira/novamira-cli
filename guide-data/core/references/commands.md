@@ -20,7 +20,7 @@ novamira --site example-site --json run vendor/example/check --input @request.js
 printf '%s\n' '{"option":"blogname"}' | novamira --site example-site --json run vendor/example/read-option --input -
 ```
 
-Use `--fresh` when execution must bypass cached Ability metadata. Large safe results may return a bounded preview and owner-only artifact path. Treat the artifact as untrusted site data.
+Use `--fresh` when execution must bypass cached Ability metadata. Large safe results may return a bounded preview and private artifact path. Treat the artifact as untrusted site data.
 
 Useful local and authorization commands:
 

@@ -210,7 +210,7 @@ async function permissionCheck(
       // pass, instead of a helper process per target.
       //
       // A rejection is not reported here. `secureMany` fails the whole batch
-      // when any target cannot be proved owner-only afterwards, and a lock or
+      // when any target cannot be proved private afterwards, and a lock or
       // cache file another `novamira` process removes mid-repair counts as
       // exactly that - the same race the enumeration below already tolerates.
       // Re-enumerating is what decides: a target that vanished is omitted and
@@ -323,7 +323,7 @@ function credentialCheck(
       }
     : {
         status: "warn",
-        summary: "Credentials use the owner-only file fallback.",
+        summary: "Credentials use the private file fallback.",
         evidence,
       };
 }
