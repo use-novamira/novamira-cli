@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
+
+### Added
+
+- `sites rename <name> <new-name>` renames a site profile, moving its stored
+  OAuth credentials with it and invalidating the old profile's cached Ability
+  metadata. It never changes the site URL, origin, or grant, and it does not
+  revoke remote access.
+- The installers run unattended: set `NOVAMIRA_AGENT` to choose the agent that
+  receives the Novamira skill, or `NOVAMIRA_SKIP_SKILL=1` to install only the
+  CLI.
 
 ### Fixed
 
