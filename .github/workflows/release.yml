@@ -49,17 +49,22 @@ jobs:
           NPM_CONFIG_PREFER_ONLINE: "true"
         run: |
           version=${GITHUB_REF_NAME#v}
+          # Propagation regularly outruns a one-minute budget, and a timeout
+          # here fails a publication that already succeeded. Wait minutes, and
+          # report the budget the loop actually used.
+          timeout=300
+          interval=10
           await() {
             description=$1
             shift
-            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-              if "$@" >/dev/null 2>&1; then
-                return 0
+            deadline=$((SECONDS + timeout))
+            until "$@" >/dev/null 2>&1; do
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "npm did not serve $description for @novamira/cli@$version within $timeout seconds" >&2
+                return 1
               fi
-              sleep 5
+              sleep "$interval"
             done
-            echo "npm did not serve $description for @novamira/cli@$version within 60 seconds" >&2
-            return 1
           }
           attested() {
             npm view @novamira/cli@$version dist.attestations --json |

@@ -27,6 +27,26 @@ test("a verified npm publication creates a generated GitHub release", async () =
   assert.match(releaseJob, /--generate-notes/);
 });
 
+test("publication verification outwaits slow registry propagation", async () => {
+  const workflow = await readFile(".github/workflows/release.yml", "utf8");
+  const budget = workflow.match(/^ +timeout=(\d+)$/m);
+  const interval = workflow.match(/^ +interval=(\d+)$/m);
+
+  assert.ok(budget, "the verification step declares a wait budget");
+  assert.ok(interval, "the verification step declares a poll interval");
+  assert.ok(
+    Number(budget[1]) >= 180,
+    "a published tarball and its attestation can take minutes to serve",
+  );
+  assert.ok(Number(interval[1]) >= 5);
+  assert.ok(Number(interval[1]) < Number(budget[1]));
+
+  // The reported budget reads from the same value the loop waits on, so a
+  // future change cannot leave the failure message claiming a stale duration.
+  assert.match(workflow, /deadline=\$\(\(SECONDS \+ timeout\)\)/);
+  assert.match(workflow, /within \$timeout seconds/);
+});
+
 async function runUnixInstaller(environment = {}) {
   const root = await mkdtemp(join(tmpdir(), "novamira-installer-"));
   const bin = join(root, "mock-bin");
