@@ -247,7 +247,9 @@ export class WindowsCredentialManagerBackend extends CommandCredentialBackend {
       "if($action -eq 'write'){[NovamiraCredential]::Write($target,[Console]::In.ReadToEnd())}",
       "elseif($action -eq 'read'){$v=[NovamiraCredential]::Read($target);if($null -eq $v){Write-Output '__NOVAMIRA_NOT_FOUND__'}else{[Console]::Out.Write($v)}}",
       "else{[NovamiraCredential]::Delete($target)}",
-    ].join(";");
+      // Newline, never ";": a semicolon terminates the `if`, so PowerShell then
+      // parses `elseif`/`else` as commands that do not exist and exits non-zero.
+    ].join("\n");
     // Source is fixed code, not secret data. The secret record is supplied only on stdin.
     return this.executor.execute(
       "powershell.exe",

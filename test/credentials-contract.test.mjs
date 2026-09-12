@@ -300,6 +300,11 @@ test("the Windows credential backend stores realistic tokens within the credenti
         if (script === "$PSVersionTable.PSVersion.ToString()")
           return { code: 0, stdout: "5.1\n" };
         assert.doesNotMatch(script, /\$args\[/);
+        // A ";" ends the statement, so `};elseif` / `};else` leaves PowerShell
+        // looking up `elseif`/`else` as commands. That is a parse failure for
+        // every action — the same non-zero exit the real binary produces.
+        if (/\}\s*;\s*(elseif|else)\b/.test(script))
+          return { code: 1, stdout: "" };
         const action = /\$action='([a-z]+)'/.exec(script)?.[1];
         const target = /\$target='([^']+)'/.exec(script)?.[1];
         assert.ok(action, `script must inline its action: ${script}`);
