@@ -7,6 +7,7 @@
 // proves that the generated script binds its inputs and reads the actual ACLs.
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,6 +21,30 @@ if (process.platform !== "win32") {
   );
   process.exit(0);
 }
+
+const { WindowsCredentialManagerBackend } = await import(
+  new URL("../dist/auth/keychain-backends.js", import.meta.url).href
+);
+const backend = new WindowsCredentialManagerBackend();
+const account = `acceptance o' ${randomUUID()}`;
+const secret = JSON.stringify({
+  accessToken: "a".repeat(733),
+  refreshToken: "r".repeat(798),
+});
+try {
+  assert.equal(await backend.probe(), true);
+  assert.equal(await backend.read(account), undefined);
+  await backend.replace(account, "dummy-secret");
+  assert.equal(await backend.read(account), "dummy-secret");
+  await backend.replace(account, secret);
+  assert.equal(await backend.read(account), secret);
+  await backend.delete(account);
+  assert.equal(await backend.read(account), undefined);
+  await backend.delete(account);
+} finally {
+  await backend.delete(account);
+}
+process.stdout.write("windows credential acceptance: ok\n");
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const { WindowsFileSecurity, secureDirectory } = await import(

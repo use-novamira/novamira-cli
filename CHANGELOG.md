@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Windows: Credential Manager operations now preserve PowerShell's
+  `if`/`elseif`/`else` chain, fixing OAuth login failures after approval and
+  failed credential reads and deletes. Windows CI now exercises a real
+  credential write, read, replacement, and delete round trip.
+
 ## 1.2.0
 
 ### Added

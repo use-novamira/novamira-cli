@@ -300,6 +300,9 @@ test("the Windows credential backend stores realistic tokens within the credenti
         if (script === "$PSVersionTable.PSVersion.ToString()")
           return { code: 0, stdout: "5.1\n" };
         assert.doesNotMatch(script, /\$args\[/);
+        assert.match(script, /\}\nelseif\(/);
+        assert.match(script, /\}\nelse\{/);
+        assert.doesNotMatch(script, /\};(?:elseif|else)\b/);
         const action = /\$action='([a-z]+)'/.exec(script)?.[1];
         const target = /\$target='([^']+)'/.exec(script)?.[1];
         assert.ok(action, `script must inline its action: ${script}`);
