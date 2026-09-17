@@ -99,6 +99,10 @@ class CallbackHarness {
   closes = 0;
   authorizationUrls = [];
   callbackError;
+  // The site resolves the client before it will redirect anywhere. An
+  // unknown client_id is answered with a 400 page in the browser, so nothing
+  // ever reaches this listener and the wait runs out its timeout.
+  clientKnown = () => true;
   async start() {
     this.starts += 1;
     const redirectUri = `http://127.0.0.1:${String(41000 + this.starts)}/callback`;
@@ -112,6 +116,8 @@ class CallbackHarness {
         }
         const authorization = new URL(this.authorizationUrls.at(-1));
         assert.equal(authorization.searchParams.get("state"), state);
+        if (!this.clientKnown(authorization.searchParams.get("client_id")))
+          throw new Error("authorization timed out: Unknown client_id.");
         return { code: `code-${authorization.searchParams.get("scope")}` };
       },
       close: async () => {
@@ -139,6 +145,11 @@ async function harness(harnessOptions = {}) {
   const shownUrls = [];
   let registrations = 0;
   let tokenRequests = 0;
+  // Client identifiers the site still resolves. Reinstalling the plugin drops
+  // every registration, which is what forgetClients() reproduces.
+  const knownClients = new Set();
+  const probeRequests = [];
+  callbacks.clientKnown = (clientId) => knownClients.has(clientId);
   let invalidClientOnce = false;
   let narrowScopeOnce = false;
   const deviceSupported = harnessOptions.deviceSupported !== false;
@@ -210,6 +221,7 @@ async function harness(harnessOptions = {}) {
           DEVICE_CODE_GRANT,
           "refresh_token",
         ]);
+        knownClients.add(`device-client-${String(registrations)}`);
         return Response.json(
           {
             client_id: `device-client-${String(registrations)}`,
@@ -224,6 +236,7 @@ async function harness(harnessOptions = {}) {
         body.redirect_uris[0],
         /^http:\/\/127\.0\.0\.1:\d+\/callback$/,
       );
+      knownClients.add(`client-${String(registrations)}`);
       return Response.json(
         {
           client_id: `client-${String(registrations)}`,
@@ -251,6 +264,18 @@ async function harness(harnessOptions = {}) {
     if (url.pathname.endsWith("/oauth/token")) {
       tokenRequests += 1;
       const body = new URLSearchParams(init.body);
+      // league/oauth2-server resolves the client before it looks at the grant,
+      // so a client the site no longer holds fails as invalid_client whatever
+      // the grant was.
+      if (!knownClients.has(body.get("client_id")))
+        return Response.json({ error: "invalid_client" }, { status: 401 });
+      if (body.get("grant_type") === "refresh_token") {
+        probeRequests.push({
+          clientId: body.get("client_id"),
+          resource: body.get("resource"),
+        });
+        return Response.json({ error: "invalid_request" }, { status: 401 });
+      }
       if (body.get("grant_type") === DEVICE_CODE_GRANT) {
         deviceTokenRequests.push({
           clientId: body.get("client_id"),
@@ -377,6 +402,10 @@ async function harness(harnessOptions = {}) {
     sleeps,
     service,
     counts: () => ({ registrations, tokenRequests }),
+    probeRequests,
+    forgetClients: () => {
+      knownClients.clear();
+    },
     failUnknownClient: () => {
       invalidClientOnce = true;
     },
@@ -479,7 +508,9 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
       noOpen: true,
       timeoutMs: 1000,
     });
-    assert.deepEqual(current.counts(), { registrations: 1, tokenRequests: 2 });
+    // Reusing the stored client costs the one request that confirms the site
+    // still holds it, on top of the code exchange.
+    assert.deepEqual(current.counts(), { registrations: 1, tokenRequests: 3 });
     assert.equal(current.shownUrls.length, 1);
 
     current.failUnknownClient();
@@ -489,7 +520,7 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
       noOpen: true,
       timeoutMs: 1000,
     });
-    assert.deepEqual(current.counts(), { registrations: 2, tokenRequests: 4 });
+    assert.deepEqual(current.counts(), { registrations: 2, tokenRequests: 6 });
     assert.equal(
       (await current.profiles.get("production")).clientId,
       "client-2",
@@ -1095,4 +1126,77 @@ test("the browser command never puts the authorization URL in executable text", 
   ]);
   assert.deepEqual(windows.environment, { NOVAMIRA_BROWSER_URL: url });
   assert.ok(!windows.args.some((argument) => argument.includes(url)));
+});
+
+test("a stored client the site no longer holds is replaced before the browser opens", async () => {
+  const current = await harness();
+  try {
+    await current.service.login({
+      siteUrl: "https://example.test",
+      name: "production",
+      noOpen: true,
+      timeoutMs: 1000,
+    });
+    assert.equal(
+      (await current.profiles.get("production")).clientId,
+      "client-1",
+    );
+
+    // Uninstalling and reinstalling the plugin drops every registration. The
+    // site answers the stale client_id with a 400 page at its authorization
+    // endpoint and redirects nothing back, so the browser flow would wait out
+    // its timeout: the CLI has to find out before it sends anyone there.
+    current.forgetClients();
+    await current.service.login({
+      siteUrl: "https://example.test",
+      name: "production",
+      noOpen: true,
+      timeoutMs: 1000,
+    });
+    assert.equal(current.counts().registrations, 2);
+    assert.equal(
+      (await current.profiles.get("production")).clientId,
+      "client-2",
+    );
+    assert.equal(
+      new URL(current.shownUrls.at(-1)).searchParams.get("client_id"),
+      "client-2",
+    );
+  } finally {
+    await rm(current.root, { recursive: true, force: true });
+  }
+});
+
+test("a stored client the site still holds is reused without registering again", async () => {
+  const current = await harness();
+  try {
+    await current.service.login({
+      siteUrl: "https://example.test",
+      name: "production",
+      noOpen: true,
+      timeoutMs: 1000,
+    });
+    await current.service.login({
+      siteUrl: "https://example.test",
+      name: "production",
+      noOpen: true,
+      timeoutMs: 1000,
+    });
+    assert.equal(current.counts().registrations, 1);
+    assert.equal(
+      (await current.profiles.get("production")).clientId,
+      "client-1",
+    );
+    // The check carries the resource the login targets, and never a credential
+    // that could be replayed: the site answers invalid_request, which says the
+    // client itself is still registered.
+    assert.deepEqual(current.probeRequests, [
+      {
+        clientId: "client-1",
+        resource: "https://example.test/wp-json/mcp/novamira-oauth",
+      },
+    ]);
+  } finally {
+    await rm(current.root, { recursive: true, force: true });
+  }
 });

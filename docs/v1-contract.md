@@ -89,6 +89,16 @@ novamira update [--check]
 
 `auth login` always requests the full `mcp` scope.
 
+A login that reuses a stored `clientId` for the loopback grant first asks the
+token endpoint whether the site still resolves that client, presenting a refresh
+grant the site cannot honour so that nothing is replayable and no authorization
+state is created. An `invalid_client` or `unauthorized_client` answer discards
+the stored client and registers a new one before the browser opens; any other
+answer, including a throttled or unreachable endpoint, keeps it. The check
+exists because an authorization endpoint does not redirect errors for a client
+it cannot resolve, so a site that dropped its registrations would otherwise
+leave the loopback listener waiting for a callback that never comes.
+
 `auth login --device` runs the RFC 8628 device authorization grant instead of
 the loopback authorization-code grant, for shells whose browser cannot reach a
 listener on the CLI host. It is available only when authorization-server

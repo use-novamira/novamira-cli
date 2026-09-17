@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { stderr } from "node:process";
 import { setTimeout as setTimeoutPromise } from "node:timers/promises";
 import { CliError } from "../errors.js";
@@ -157,6 +157,23 @@ export class LoginService {
         ? existing.clientId
         : undefined;
     let retriedUnknownClient = false;
+    // The device grant learns a client is gone from its own first request, and
+    // the browser grant learns it from the token exchange — but only if the
+    // authorization endpoint redirected, which it will not do for a client it
+    // cannot resolve: it answers the browser and leaves the loopback listener
+    // waiting. A site that dropped its registrations (reinstalled, restored,
+    // or simply old enough for its client pruning) is therefore asked here,
+    // before anyone is sent to a page that can only fail.
+    if (
+      deviceEndpoint === undefined &&
+      clientId !== undefined &&
+      !(await this.clientStillRegistered(
+        authorization,
+        protectedMetadata,
+        clientId,
+      ))
+    )
+      clientId = undefined;
 
     for (;;) {
       const reusedClient = clientId !== undefined;
@@ -228,6 +245,37 @@ export class LoginService {
         credential,
       );
       return { profile, expiresAt };
+    }
+  }
+
+  /**
+   * Answers whether the site still resolves a stored client, by making the one
+   * request that reports it directly to the CLI. The grant is deliberately a
+   * credential the site cannot honour, so nothing here can be replayed and no
+   * authorization state is created: `invalid_client` means the client itself is
+   * gone, while a rejection of the grant means the client was resolved. Any
+   * other outcome — an unexpected error code, a throttled endpoint, a network
+   * failure — keeps the stored client, leaving the flow exactly where it stood
+   * without this check.
+   */
+  private async clientStillRegistered(
+    authorization: AuthorizationServerMetadata,
+    resource: ProtectedResourceMetadata,
+    clientId: string,
+  ): Promise<boolean> {
+    try {
+      await this.requestToken(
+        authorization,
+        new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: clientId,
+          refresh_token: randomBytes(32).toString("base64url"),
+          resource: resource.resource,
+        }),
+      );
+      return true;
+    } catch (error) {
+      return !rejectedClient(error);
     }
   }
 
