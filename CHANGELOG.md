@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- `auth login` recovers a site whose OAuth client registration is gone, which
+  happens when the plugin is reinstalled, the site is restored from a backup,
+  or the registration is old enough to have been pruned. The login now confirms
+  the site still holds the stored client before opening the browser, and
+  registers a new one when it does not, instead of sending the browser to a
+  page that answers `Unknown client_id.` while the CLI waits out its timeout.
 - Windows: Credential Manager operations now preserve PowerShell's
   `if`/`elseif`/`else` chain, fixing OAuth login failures after approval and
   failed credential reads and deletes. Windows CI now exercises a real
