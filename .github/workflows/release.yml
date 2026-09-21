@@ -68,7 +68,7 @@ jobs:
           }
           attested() {
             npm view @novamira/cli@$version dist.attestations --json |
-              node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{if(!JSON.parse(s).provenance)process.exit(1)})'
+              node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const value=JSON.parse(s); const records=Array.isArray(value)?value:[value]; if(records.length!==1 || !records[0].provenance)process.exit(1)})'
           }
           await "the tarball" npm pack @novamira/cli@$version --dry-run --ignore-scripts --json
           node scripts/package-acceptance.mjs --package=@novamira/cli@$version
