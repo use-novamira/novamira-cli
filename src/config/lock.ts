@@ -5,6 +5,7 @@ import { open, readFile, stat, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { CliError } from "../errors.js";
 import type { FileSecurity } from "./file-security.js";
 import { secureDirectory } from "./file-security.js";
@@ -17,6 +18,7 @@ export interface LockOptions {
 
 export class ProfileLockManager {
   private readonly heldKeys = new Set<string>();
+  private readonly operationKeys = new AsyncLocalStorage<Set<string>>();
 
   constructor(
     private readonly stateDir: string,
@@ -28,12 +30,26 @@ export class ProfileLockManager {
     operation: () => Promise<T>,
     options: LockOptions = {},
   ): Promise<T> {
-    const release = await this.acquire(profileName, options);
-    try {
-      return await operation();
-    } finally {
-      await release();
+    const inheritedKeys = this.operationKeys.getStore();
+    if (inheritedKeys?.has(profileName)) {
+      throw new CliError(
+        "internal_error",
+        `Profile lock ${profileName} is already held by this lock manager.`,
+      );
     }
+    // Independent operations may share a manager. Only acquisition in the
+    // owning async context is recursive; other callers wait on the file lock.
+    const release = await this.acquireFileLock(profileName, options);
+    const keys = new Set(inheritedKeys);
+    keys.add(profileName);
+    return this.operationKeys.run(keys, async () => {
+      try {
+        return await operation();
+      } finally {
+        keys.delete(profileName);
+        await release();
+      }
+    });
   }
 
   async acquire(
@@ -46,6 +62,13 @@ export class ProfileLockManager {
         `Profile lock ${profileName} is already held by this lock manager.`,
       );
     }
+    return this.acquireFileLock(profileName, options);
+  }
+
+  private async acquireFileLock(
+    profileName: string,
+    options: LockOptions,
+  ): Promise<() => Promise<void>> {
     const timeoutMs = options.timeoutMs ?? 10_000;
     const staleMs = options.staleMs ?? 60_000;
     const pollMs = options.pollMs ?? 25;

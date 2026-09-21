@@ -183,6 +183,58 @@ test("profiles update atomically, select deterministically, and invoke cleanup b
   }
 });
 
+test("shared-manager operations wait for document locks while recursive locks fail fast", async () => {
+  const state = await isolatedState();
+  const entered = Promise.withResolvers();
+  const unblock = Promise.withResolvers();
+  const events = [];
+  let owner;
+  let contender;
+  try {
+    owner = state.locks.withLock("__profile_document__", async () => {
+      events.push("owner");
+      entered.resolve();
+      await unblock.promise;
+      await assert.rejects(
+        state.locks.withLock("__profile_document__", async () => {}),
+        /already held/,
+      );
+      events.push("released");
+    });
+    await entered.promise;
+    // Start after acquisition, rather than relying on filesystem scheduling
+    // to make the two upserts overlap at the document lock.
+    contender = state.store.upsert({
+      name: "staging",
+      siteUrl: "https://example.test/wp",
+    });
+    const waiting = state.locks.withLock(
+      "__profile_document__",
+      async () => assert.fail("the document lock was not exclusive"),
+      { timeoutMs: 20, pollMs: 5 },
+    );
+    // Attach a handler immediately so a regression cannot go unhandled.
+    const completed = Promise.allSettled([contender]);
+    await assert.rejects(waiting, /Timed out waiting/);
+    unblock.resolve();
+    await owner;
+    assert.equal((await completed)[0].status, "fulfilled");
+    assert.equal((await state.store.get("staging")).name, "staging");
+    assert.deepEqual(events, ["owner", "released"]);
+    await assert.rejects(
+      state.locks.withLock("failure", async () => {
+        throw new Error("operation failed");
+      }),
+      /operation failed/,
+    );
+    await state.locks.withLock("failure", async () => {});
+  } finally {
+    unblock.resolve();
+    await Promise.allSettled([owner, contender]);
+    await rm(state.root, { recursive: true, force: true });
+  }
+});
+
 test("profiles rename moves credentials and invalidates caches without running cleanup", async () => {
   const state = await isolatedState();
   const cleaned = [];
