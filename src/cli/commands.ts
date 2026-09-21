@@ -63,12 +63,15 @@ interface CommandResult {
   readonly humanPresentation?: "ability-description";
 }
 
+import { CliError } from "../errors.js";
+
 export interface CommandEnvironment
   extends SelectionEnvironment, SiteUrlEnvironment, LoginEnvironment {
   readonly NOVAMIRA_REGISTRY?: string;
 }
 
 export interface CommandDependencies {
+  readonly managedUpdateHint?: string;
   readonly version: string;
   readonly requestId: string;
   readonly paths: PlatformPaths;
@@ -390,6 +393,9 @@ export function createCommandHandlers(
       execute(
         options,
         async () => {
+          if (dependencies.managedUpdateHint !== undefined) {
+            throw new CliError("usage_error", dependencies.managedUpdateHint);
+          }
           const status = await dependencies
             .createUpdateChecker(options.timeout)
             .check();

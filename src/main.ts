@@ -32,7 +32,15 @@ import {
   type UpdateCheckEnvironment,
 } from "./update/notifier.js";
 
-export const VERSION = "1.2.0";
+export const VERSION = "1.3.0";
+
+/** Options for distributors invoking the public entry point in a child process. */
+export interface DistributionOptions {
+  readonly managed?: {
+    /** Human-readable guidance identifying how this distribution is updated. */
+    readonly updateHint: string;
+  };
+}
 
 export interface RuntimeEnvironment
   extends
@@ -48,6 +56,7 @@ export async function main(
   argv: readonly string[],
   streams: OutputStreams = { stdout: process.stdout, stderr: process.stderr },
   environment: RuntimeEnvironment = process.env,
+  distribution: DistributionOptions = {},
 ): Promise<number> {
   const requestId = randomUUID();
   let options: GlobalOptions | undefined;
@@ -134,6 +143,9 @@ export async function main(
   );
 
   const handlers = createCommandHandlers({
+    ...(distribution.managed === undefined
+      ? {}
+      : { managedUpdateHint: distribution.managed.updateHint }),
     version: VERSION,
     requestId,
     paths,
@@ -162,6 +174,7 @@ export async function main(
 
   const emitUpdateNotice = async (): Promise<void> => {
     if (
+      distribution.managed !== undefined ||
       options?.quiet === true ||
       updateNoticeSuppressed ||
       !commandExecuted ||

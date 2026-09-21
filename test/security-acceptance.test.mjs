@@ -196,6 +196,7 @@ test("runtime dependencies and publish roots remain minimal and protocol-free", 
   assert.deepEqual(packageJson.files, [
     "dist",
     "guide-data",
+    "docs/embedding.md",
     "skills",
     "README.md",
     "LICENSE",

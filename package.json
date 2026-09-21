@@ -1,6 +1,6 @@
 {
   "name": "@novamira/cli",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "REST-first command-line client for Novamira WordPress Abilities",
   "license": "AGPL-3.0-or-later",
   "author": "Ovation S.r.l.",
@@ -13,6 +13,12 @@
     "url": "https://github.com/use-novamira/novamira-cli/issues"
   },
   "type": "module",
+  "exports": {
+    "./entry": {
+      "types": "./dist/main.d.ts",
+      "default": "./dist/main.js"
+    }
+  },
   "bin": {
     "novamira": "dist/index.js"
   },
@@ -22,6 +28,7 @@
   "files": [
     "dist",
     "guide-data",
+    "docs/embedding.md",
     "skills",
     "README.md",
     "LICENSE"
@@ -36,6 +43,7 @@
     "check": "bun run lint && bun run format:check && bun run test",
     "pack:inspect": "bun run build && bun pm pack --dry-run --ignore-scripts",
     "package:acceptance": "bun run build && node scripts/package-acceptance.mjs",
+    "embedded:acceptance": "bun run build && node scripts/embedded-acceptance.mjs",
     "windows:acceptance": "bun run build && node scripts/windows-acl-acceptance.mjs"
   },
   "publishConfig": {

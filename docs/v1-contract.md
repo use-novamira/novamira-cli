@@ -323,3 +323,8 @@ The sample above is the single-path shape; the batch shape runs the identical bo
 ## Fixtures
 
 `fixtures/v1` contains protected-resource metadata, agent context, a WordPress REST error, and raw scalar/object success values. `../novamira/tests/fixtures/rest-v1` is the server copy. Both directories must be valid JSON and byte-identical. They use reserved `example.test` data and contain no credentials.
+# Distribution entry point
+
+The public `@novamira/cli/entry` export and managed invocation policy are
+specified in [embedding.md](embedding.md). Node diagnostics retain `runtime.node`;
+Deno diagnostics use `runtime.deno` and report the actual Deno version.

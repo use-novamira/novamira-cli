@@ -1,5 +1,8 @@
 # Novamira CLI
 
+Distributors can use the documented [callable entry point](docs/embedding.md)
+to invoke the CLI in a dedicated child process.
+
 `novamira` is the REST-first command-line client for Novamira WordPress Abilities.
 
 It provides profile state, secure credential storage, OAuth, Ability discovery

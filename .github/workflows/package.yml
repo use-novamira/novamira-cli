@@ -12,6 +12,22 @@ permissions:
   contents: read
 
 jobs:
+  embedded:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.19
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run embedded:acceptance
+
   package:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
     strategy:

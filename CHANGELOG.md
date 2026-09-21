@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
+
+### Added
+
+- Public `@novamira/cli/entry` callable entry point with a managed-distribution
+  option that suppresses update checks and delegates updates to the distributor.
+- Offline compiled Deno acceptance for the entry point and bundled guide data.
+- Deno diagnostics report the actual runtime instead of its Node compatibility
+  version.
 
 ### Fixed
 

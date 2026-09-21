@@ -44,7 +44,7 @@ try {
     ? packResult
     : Object.values(packResult);
   assert.equal(manifest.name, "@novamira/cli");
-  assert.equal(manifest.version, "1.2.0");
+  assert.equal(manifest.version, "1.3.0");
   assert.equal(
     manifest.integrity,
     process.env.NOVAMIRA_EXPECTED_INTEGRITY ?? manifest.integrity,
@@ -68,6 +68,7 @@ try {
     "LICENSE",
     "README.md",
     "dist",
+    "docs",
     "guide-data",
     "package.json",
     "skills",
@@ -186,7 +187,7 @@ try {
 
 function verifyInstalledCommands(command, home) {
   assert.match(run(command, ["--help"], temporary).stdout, /Usage: novamira/);
-  assert.equal(run(command, ["--version"], temporary).stdout.trim(), "1.2.0");
+  assert.equal(run(command, ["--version"], temporary).stdout.trim(), "1.3.0");
   const guide = JSON.parse(
     run(command, ["--json", "guide", "get", "core", "--full"], temporary)
       .stdout,

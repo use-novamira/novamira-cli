@@ -114,15 +114,28 @@ export function offlineDoctorDefinitions(
 ): readonly DoctorCheckDefinition[] {
   const selectedProfile = () =>
     dependencies.profiles.trySelect(options.site, dependencies.environment);
+  const denoVersion =
+    dependencies.nodeVersion === undefined
+      ? (process.versions as Readonly<Record<string, string | undefined>>).deno
+      : undefined;
   return [
     {
-      id: "runtime.node",
+      id: denoVersion === undefined ? "runtime.node" : "runtime.deno",
       run: () =>
         Promise.resolve(
-          runtimeCheck(
-            dependencies.nodeVersion ?? process.versions.node,
-            dependencies.platform ?? process.platform,
-          ),
+          denoVersion === undefined
+            ? runtimeCheck(
+                dependencies.nodeVersion ?? process.versions.node,
+                dependencies.platform ?? process.platform,
+              )
+            : {
+                status: "pass" as const,
+                summary: "Running under Deno's Node compatibility runtime.",
+                evidence: {
+                  denoVersion,
+                  platform: dependencies.platform ?? process.platform,
+                },
+              },
         ),
     },
     {
