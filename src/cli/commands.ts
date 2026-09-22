@@ -72,6 +72,7 @@ export interface CommandEnvironment
 
 export interface CommandDependencies {
   readonly managedUpdateHint?: string;
+  readonly managedCommandPrefix?: string | undefined;
   readonly version: string;
   readonly requestId: string;
   readonly paths: PlatformPaths;
@@ -382,7 +383,10 @@ export function createCommandHandlers(
 
     guideGet: (name, options: GuideGetOptions) =>
       execute(options, async () => {
-        const guide = await new GuideStore().get(name, options.full);
+        const guide = await new GuideStore(undefined, {
+          commandPrefix: dependencies.managedCommandPrefix,
+          updateHint: dependencies.managedUpdateHint,
+        }).get(name, options.full);
         return {
           data: { ...guide, version },
           humanData: guide.content,

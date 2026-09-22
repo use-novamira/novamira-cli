@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1
+
+- Add managed command-prefix rendering for bundled core guidance, full references
+  and JSON output. Embedded distributions can use `novamira-hq site-cli` while
+  preserving site-owned guidance and Ability identifiers.
+- Replace standalone update guidance with the distributor's update hint in
+  managed mode.
+
 ## 1.3.0
 
 ### Added

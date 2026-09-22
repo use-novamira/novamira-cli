@@ -16,7 +16,10 @@ test("public managed entry preserves output and blocks updates before side effec
       NOVAMIRA_REGISTRY: "http://127.0.0.1:1",
     };
     const distribution = {
-      managed: { updateHint: "Update the containing application instead." },
+      managed: {
+        updateHint: "Update the containing application instead.",
+        commandPrefix: "novamira-hq site-cli",
+      },
     };
     const run = async (argv) => {
       let stdout = "";
@@ -45,6 +48,25 @@ test("public managed entry preserves output and blocks updates before side effec
     assert.equal(guides.code, 0);
     assert.ok(JSON.parse(guides.stdout).data.guides.length > 0);
     assert.equal(guides.stderr, "");
+    for (const flags of [[], ["--full"], ["--full", "--json"]]) {
+      const result = await run(["guide", "get", "core", ...flags]);
+      assert.equal(result.code, 0);
+      const content = flags.includes("--json")
+        ? JSON.parse(result.stdout).data.content
+        : result.stdout;
+      assert.match(content, /novamira-hq site-cli sites list/);
+      assert.match(content, /novamira-hq site-cli auth login/);
+      assert.doesNotMatch(content, /(?<=`|^|\| )novamira(?= |`)/m);
+      if (flags.includes("--full")) {
+        assert.match(content, /describe novamira\/read-file/);
+        assert.match(content, /\| novamira-hq site-cli --site/);
+        assert.match(content, /Update the containing application instead\./);
+        assert.doesNotMatch(
+          content,
+          /package manager|novamira-hq site-cli update/,
+        );
+      }
+    }
     for (const argv of [
       ["update", "--json"],
       ["update", "--check", "--json"],

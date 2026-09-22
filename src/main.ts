@@ -32,13 +32,15 @@ import {
   type UpdateCheckEnvironment,
 } from "./update/notifier.js";
 
-export const VERSION = "1.3.0";
+export const VERSION = "1.3.1";
 
 /** Options for distributors invoking the public entry point in a child process. */
 export interface DistributionOptions {
   readonly managed?: {
     /** Human-readable guidance identifying how this distribution is updated. */
     readonly updateHint: string;
+    /** Trusted distributor command, including any fixed subcommand prefix. */
+    readonly commandPrefix?: string;
   };
 }
 
@@ -145,7 +147,10 @@ export async function main(
   const handlers = createCommandHandlers({
     ...(distribution.managed === undefined
       ? {}
-      : { managedUpdateHint: distribution.managed.updateHint }),
+      : {
+          managedUpdateHint: distribution.managed.updateHint,
+          managedCommandPrefix: distribution.managed.commandPrefix,
+        }),
     version: VERSION,
     requestId,
     paths,

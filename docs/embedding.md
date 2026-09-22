@@ -7,7 +7,10 @@ Since 1.3.0, distributors may import `main` and `VERSION` from
 import { main } from "@novamira/cli/entry";
 
 process.exitCode = await main(process.argv.slice(2), undefined, undefined, {
-  managed: { updateHint: "Update the containing application instead." },
+  managed: {
+    updateHint: "Update the containing application instead.",
+    commandPrefix: "novamira-hq site-cli",
+  },
 });
 ```
 
@@ -22,6 +25,15 @@ registry request or update-state write. Both `update` and `update --check` fail
 with the supplied hint before registry access or package-manager execution.
 The containing application owns updates to its pinned package. Standalone
 invocations retain their existing update behavior.
+
+Since 1.3.1, `managed.commandPrefix` renders executable examples in bundled
+`guide get` output, including `--full` references and JSON content, using the
+distributor's command. It accepts space-separated executable/subcommand tokens
+(letters, digits, dots, underscores and hyphens), not shell expressions or paths
+with spaces. Managed guidance replaces standalone update instructions with
+`updateHint`. Site-provided skills, Ability identifiers, profile storage and
+ordinary command output are never rewritten. An omitted prefix remains
+`novamira`; standalone guide behavior is unchanged.
 
 Packaging must retain `dist/` and `guide-data/` at their original relative paths,
 as well as package dependencies and applicable licenses. Deno embedders must

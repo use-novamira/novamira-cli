@@ -22,7 +22,32 @@ export class GuideStore {
     private readonly root = fileURLToPath(
       new URL("../../guide-data/", import.meta.url),
     ),
+    private readonly distribution: {
+      readonly commandPrefix?: string | undefined;
+      readonly updateHint?: string | undefined;
+    } = {},
   ) {}
+
+  /** Render only our bundled documents; site-controlled skills are never rewritten. */
+  private render(content: string): string {
+    const prefix = this.distribution.commandPrefix ?? "novamira";
+    if (!/^[a-zA-Z0-9._-]+(?: [a-zA-Z0-9._-]+)*$/.test(prefix))
+      throw new CliError(
+        "usage_error",
+        "Invalid managed guidance command prefix.",
+      );
+    const updateHint = this.distribution.updateHint;
+    const guidance =
+      updateHint === undefined
+        ? content
+        : content.replace(
+            /<!-- standalone-updates -->[\s\S]*?<!-- \/standalone-updates -->/g,
+            () => updateHint,
+          );
+    // Exact executable tokens in fenced/inline examples, including shell pipes.
+    // Ability names (novamira/read-file), skill names and URLs remain intact.
+    return guidance.replace(/(?<=`|^|\| )novamira(?= |`)/gm, () => prefix);
+  }
 
   async list(): Promise<readonly GuideSummary[]> {
     try {
@@ -50,7 +75,9 @@ export class GuideStore {
 
     try {
       const directory = `${this.root}/${name}`;
-      const content = (await readFile(`${directory}/SKILL.md`, "utf8")).trim();
+      const content = this.render(
+        (await readFile(`${directory}/SKILL.md`, "utf8")).trim(),
+      );
       const references = await referenceNames(directory);
       if (!full) return { name, content, references };
 
@@ -61,7 +88,7 @@ export class GuideStore {
           "utf8",
         );
         sections.push(
-          `# Bundled reference: references/${reference}\n\n${text.trim()}`,
+          `# Bundled reference: references/${reference}\n\n${this.render(text.trim())}`,
         );
       }
       return { name, content: sections.join("\n\n---\n\n"), references };
