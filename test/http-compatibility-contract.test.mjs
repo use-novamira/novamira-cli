@@ -379,6 +379,8 @@ test("metadata validation rejects origin attacks and compatibility matrix failur
   const supported = protectedFixture.novamira;
   const failures = [
     { ...supported, wordpress_version: "6.8.9" },
+    { ...supported, minimum_wordpress_version: "7.3" },
+    { ...supported, wordpress_version: "not-a-version" },
     { ...supported, plugin_version: "1.9.9" },
     { ...supported, plugin_version: "1.10.1" },
     { ...supported, plugin_version: "1.10.2" },
@@ -403,6 +405,13 @@ test("metadata validation rejects origin attacks and compatibility matrix failur
       code: "server_unsupported",
     });
   assert.equal(assertCompatible(supported).rest_api_version, 1);
+  assert.equal(
+    assertCompatible({
+      ...supported,
+      wordpress_version: "7.2-alpha-63789",
+    }).wordpress_version,
+    "7.2-alpha-63789",
+  );
   assert.equal(
     assertCompatible({ ...supported, plugin_version: "1.12.0" }).plugin_version,
     "1.12.0",

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Sites running WordPress development builds such as `7.2-alpha-63789` can now
+  connect when their numeric version meets the required minimum.
+
 ## 1.3.1
 
 - Add managed command-prefix rendering for bundled core guidance, full references

@@ -44,7 +44,7 @@ rest_skills
 generalized_execution_shim
 ```
 
-Protected-resource metadata exposes the compatibility object as `novamira`. Authenticated `novamira/agent-context` exposes the identical object as `server`. `plugin_version`, `rest_api_version`, `wordpress_version`, `minimum_wordpress_version`, and the complete `features` object must agree. Version comparisons use SemVer for Novamira and dotted numeric core versions for WordPress; prerelease plugin versions do not satisfy the corresponding final minimum.
+Protected-resource metadata exposes the compatibility object as `novamira`. Authenticated `novamira/agent-context` exposes the identical object as `server`. `plugin_version`, `rest_api_version`, `wordpress_version`, `minimum_wordpress_version`, and the complete `features` object must agree. Version comparisons use SemVer for Novamira and dotted numeric core versions for WordPress, ignoring a hyphenated WordPress prerelease suffix such as `-alpha-63789`; prerelease plugin versions do not satisfy the corresponding final minimum.
 
 ## OAuth and REST exposure
 

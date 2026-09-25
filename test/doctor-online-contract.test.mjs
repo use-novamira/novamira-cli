@@ -170,6 +170,25 @@ test("online doctor keeps stable IDs and passes each complete remote surface", a
   }
 });
 
+test("online doctor accepts a WordPress prerelease version", async () => {
+  const input = dependencies({
+    dependencies: {
+      metadata: {
+        probeProtectedResourceUnvalidated: async () => ({
+          ...resource,
+          novamira: {
+            ...compatibility,
+            wordpress_version: "7.2-alpha-63789",
+          },
+        }),
+      },
+    },
+  });
+  const result = await checkOf(input, "server.wordpress_version");
+  assert.equal(result.status, "pass");
+  assert.equal(result.evidence.wordpressVersion, "7.2-alpha-63789");
+});
+
 test("online failures preserve unreachable, unauthorized, scope, missing, stale, and partial distinctions", async () => {
   const unreachable = dependencies({
     dependencies: {

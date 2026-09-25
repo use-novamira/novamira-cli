@@ -397,9 +397,10 @@ function requireScopes(scopes: readonly string[]): void {
 
 function compareDotted(left: string, right: string): number {
   const parse = (value: string): number[] => {
-    if (!/^\d+(?:\.\d+)*$/.test(value))
+    const core = value.split("-", 1)[0];
+    if (core === undefined || !/^\d+(?:\.\d+)*$/.test(core))
       throw unsupported("WordPress version metadata is invalid.");
-    return value.split(".").map(Number);
+    return core.split(".").map(Number);
   };
   const leftParts = parse(left);
   const rightParts = parse(right);
