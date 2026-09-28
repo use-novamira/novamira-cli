@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Windows: `auth login` now opens the system browser when started from a bundled
+  desktop app, instead of leaving the authorization waiting without a browser.
 - Sites running WordPress development builds such as `7.2-alpha-63789` can now
   connect when their numeric version meets the required minimum.
 

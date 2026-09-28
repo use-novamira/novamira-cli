@@ -16,10 +16,6 @@ import {
   type SiteProfile,
 } from "../config/profiles.js";
 import {
-  POWERSHELL_PREFIX,
-  powerShellEnvironment,
-} from "../config/powershell.js";
-import {
   normalizeSiteUrl,
   type SiteUrlEnvironment,
 } from "../config/site-url.js";
@@ -634,9 +630,9 @@ export interface BrowserCommand {
   readonly environment: Readonly<Record<string, string>>;
 }
 
-// `$args` is never populated under `-Command`, and interpolating the URL into
-// the script would make remote metadata executable text, so on Windows the URL
-// travels in the child's environment instead.
+// FileProtocolHandler passes the URL to Windows' registered browser without a
+// shell or executable script. PowerShell's Start-Process can exit successfully
+// without opening a browser when launched by a compiled desktop child.
 export function browserCommand(
   url: string,
   platform: NodeJS.Platform,
@@ -645,12 +641,9 @@ export function browserCommand(
     return { file: "open", args: [url], environment: {} };
   if (platform === "win32")
     return {
-      file: "powershell.exe",
-      args: [
-        ...POWERSHELL_PREFIX,
-        "Start-Process -FilePath $env:NOVAMIRA_BROWSER_URL",
-      ],
-      environment: { NOVAMIRA_BROWSER_URL: url },
+      file: "rundll32.exe",
+      args: ["url.dll,FileProtocolHandler", url],
+      environment: {},
     };
   return { file: "xdg-open", args: [url], environment: {} };
 }
@@ -659,17 +652,41 @@ export class SystemBrowserLauncher implements BrowserLauncher {
   async open(url: string): Promise<void> {
     const command = browserCommand(url, process.platform);
     await new Promise<void>((resolve, reject) => {
+      const windows = process.platform === "win32";
       const child = spawn(command.file, [...command.args], {
         detached: true,
         stdio: "ignore",
         windowsHide: true,
-        env: { ...powerShellEnvironment(), ...command.environment },
+        env: { ...process.env, ...command.environment },
       });
-      child.once("error", reject);
+      const failed = () =>
+        new CliError(
+          "internal_error",
+          "Could not open your browser. Retry auth login with --device.",
+        );
+      const timer = windows
+        ? setTimeout(() => {
+            child.kill();
+            reject(failed());
+          }, 10_000)
+        : undefined;
+      child.once("error", (error) => {
+        if (timer !== undefined) clearTimeout(timer);
+        reject(error);
+      });
       child.once("spawn", () => {
-        child.unref();
-        resolve();
+        if (!windows) {
+          child.unref();
+          resolve();
+        }
       });
+      if (windows) {
+        child.once("exit", (code) => {
+          if (timer !== undefined) clearTimeout(timer);
+          if (code === 0) resolve();
+          else reject(failed());
+        });
+      }
     });
   }
 }

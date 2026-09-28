@@ -1099,7 +1099,7 @@ test("a remote shell is told about --device only when the site supports it", asy
   }
 });
 
-test("the browser command never puts the authorization URL in executable text", () => {
+test("the browser command passes the authorization URL without a shell", () => {
   const url =
     "https://example.test/oauth/authorize?state=abc';Remove-Item%20C:%5C&scope=x";
   assert.deepEqual(browserCommand(url, "darwin"), {
@@ -1113,19 +1113,9 @@ test("the browser command never puts the authorization URL in executable text", 
     environment: {},
   });
   const windows = browserCommand(url, "win32");
-  assert.equal(windows.file, "powershell.exe");
-  // $args never binds under -Command, and the URL is remote metadata, so it is
-  // read from the environment rather than interpolated into the script.
-  assert.deepEqual(windows.args, [
-    "-NoProfile",
-    "-NonInteractive",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    "Start-Process -FilePath $env:NOVAMIRA_BROWSER_URL",
-  ]);
-  assert.deepEqual(windows.environment, { NOVAMIRA_BROWSER_URL: url });
-  assert.ok(!windows.args.some((argument) => argument.includes(url)));
+  assert.equal(windows.file, "rundll32.exe");
+  assert.deepEqual(windows.args, ["url.dll,FileProtocolHandler", url]);
+  assert.deepEqual(windows.environment, {});
 });
 
 test("a stored client the site no longer holds is replaced before the browser opens", async () => {
