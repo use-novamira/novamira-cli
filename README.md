@@ -100,6 +100,10 @@ the wait, whichever ends first. Device authorization requires a site that
 advertises it; older sites report `server_unsupported`, and the browser flow
 still works there.
 
+Plain HTTP is accepted for loopback development sites, including `localhost`,
+its subdomains (such as `intern.localhost`), IPv4 loopback addresses, and `::1`.
+Localhost names may include a trailing DNS dot.
+
 For isolated development networks that expose a site over plain HTTP with a
 non-loopback hostname, opt in for each CLI invocation with
 `NOVAMIRA_ALLOW_INSECURE_HTTP=1`. Never use this override with production sites

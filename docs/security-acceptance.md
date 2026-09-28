@@ -39,3 +39,9 @@ Stored profiles are normalized when written and structurally validated when
 loaded. Loading local state permits previously stored development HTTP URLs,
 but every REST URL construction revalidates the site URL under the current
 invocation's HTTPS policy before any network request.
+
+The site HTTP policy accepts loopback IP addresses and RFC 6761 localhost names
+(`localhost` and names ending in `.localhost`, optionally with a trailing DNS
+dot). Other HTTP hosts require `NOVAMIRA_ALLOW_INSECURE_HTTP=1` for each
+invocation. `test/state-contract.test.mjs` covers localhost names and lookalike
+domains that must remain rejected.

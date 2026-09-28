@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- HTTP connections to local development sites using `*.localhost` domains were
+  incorrectly rejected.
 - Site profile names now accept accented letters for login, selection, and
   management.
 - Windows: `auth login` now opens the system browser when started from a bundled

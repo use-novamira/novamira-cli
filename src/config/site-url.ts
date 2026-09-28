@@ -4,9 +4,16 @@
 import { CliError } from "../errors.js";
 
 function isLoopback(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const host = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "");
+  // RFC 6761 section 6.3 reserves localhost and its subdomains for loopback.
   return (
-    host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host)
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "::1" ||
+    /^127(?:\.\d{1,3}){3}$/.test(host)
   );
 }
 

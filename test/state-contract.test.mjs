@@ -123,6 +123,39 @@ test("platform paths and site URLs preserve isolation and WordPress subdirectori
   });
 });
 
+test("HTTP site URLs accept localhost subdomains and reject lookalike domains", () => {
+  for (const hostname of [
+    "localhost",
+    "localhost.",
+    "intern.localhost",
+    "a.b.localhost",
+    "INTERN.LOCALHOST",
+    "intern.localhost.",
+    "127.0.0.1",
+    "127.0.0.2",
+    "[::1]",
+  ]) {
+    assert.deepEqual(normalizeSiteUrl(`http://${hostname}:8080/wp/`, {}), {
+      siteUrl: `http://${hostname.toLowerCase()}:8080/wp`,
+      origin: `http://${hostname.toLowerCase()}:8080`,
+    });
+  }
+  for (const hostname of [
+    "example.test",
+    "notlocalhost",
+    "notlocalhost.",
+    "localhost.example.com",
+    "intern.localhost.example.com",
+    "intern.localhost.example.com.",
+    "intern.localhost..",
+    "192.168.1.1",
+  ]) {
+    assert.throws(() => normalizeSiteUrl(`http://${hostname}`, {}), {
+      code: "usage_error",
+    });
+  }
+});
+
 test("profiles update atomically, select deterministically, and invoke cleanup before removal", async () => {
   const cleaned = [];
   const state = await isolatedState([
