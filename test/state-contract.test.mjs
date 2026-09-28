@@ -29,7 +29,7 @@ import {
 import { powerShellEnvironment } from "../dist/config/powershell.js";
 import { ProfileLockManager } from "../dist/config/lock.js";
 import { platformPaths } from "../dist/config/paths.js";
-import { ProfileStore } from "../dist/config/profiles.js";
+import { ProfileStore, validateProfileName } from "../dist/config/profiles.js";
 import { normalizeSiteUrl } from "../dist/config/site-url.js";
 import { main } from "../dist/main.js";
 
@@ -46,6 +46,39 @@ async function isolatedState(cleanupHooks = []) {
     store: new ProfileStore(paths.configFile, locks, security, cleanupHooks),
   };
 }
+
+test("site profile names accept accents and resolve NFC equivalents", async () => {
+  const composed = "Città";
+  const decomposed = "Citta\u0300";
+  assert.equal(validateProfileName(decomposed), composed);
+  for (const invalid of ["-Città", "Città test", "😀", "a".repeat(65)])
+    assert.throws(() => validateProfileName(invalid), { code: "usage_error" });
+
+  const state = await isolatedState();
+  try {
+    await state.store.upsert({
+      name: decomposed,
+      siteUrl: "https://example.test",
+    });
+    assert.deepEqual(
+      (await state.store.list()).map(({ name }) => name),
+      [composed],
+    );
+    assert.equal((await state.store.get(decomposed)).name, composed);
+    assert.equal((await state.store.select(decomposed, {})).name, composed);
+    await assert.rejects(state.store.rename(decomposed, composed), {
+      code: "usage_error",
+    });
+    assert.equal(
+      (await state.store.rename(decomposed, "Équipe")).name,
+      "Équipe",
+    );
+    assert.equal((await state.store.remove("E\u0301quipe")).name, "Équipe");
+    assert.deepEqual(await state.store.list(), []);
+  } finally {
+    await rm(state.root, { recursive: true, force: true });
+  }
+});
 
 test("platform paths and site URLs preserve isolation and WordPress subdirectories", () => {
   assert.equal(

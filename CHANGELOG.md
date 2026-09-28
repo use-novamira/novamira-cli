@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Site profile names now accept accented letters for login, selection, and
+  management.
 - Windows: `auth login` now opens the system browser when started from a bundled
   desktop app, instead of leaving the authorization waiting without a browser.
 - Sites running WordPress development builds such as `7.2-alpha-63789` can now

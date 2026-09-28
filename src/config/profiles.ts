@@ -62,13 +62,17 @@ export interface SelectionEnvironment {
 }
 
 export function validateProfileName(name: string): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+  const normalized = name.normalize("NFC");
+  if (
+    !/^[\p{L}\p{N}][\p{L}\p{N}\p{M}._-]*$/u.test(normalized) ||
+    Array.from(normalized).length > 64
+  ) {
     throw new CliError(
       "usage_error",
-      "Profile name must use 1-64 letters, numbers, dots, dashes, or underscores.",
+      "Profile name must use 1-64 letters (including accents), numbers, dots, dashes, or underscores.",
     );
   }
-  return name;
+  return normalized;
 }
 
 function emptyDocument(): ProfileDocument {
@@ -80,7 +84,7 @@ function requestedProfileName(
   environment: SelectionEnvironment,
 ): string | undefined {
   const requested = explicitSite ?? environment.NOVAMIRA_SITE;
-  return requested === "" ? undefined : requested;
+  return requested === "" ? undefined : requested?.normalize("NFC");
 }
 
 function isProfile(value: unknown): value is SiteProfile {
@@ -131,7 +135,7 @@ function isProfile(value: unknown): value is SiteProfile {
   ))
     return false;
   try {
-    validateProfileName(profile.name);
+    if (validateProfileName(profile.name) !== profile.name) return false;
     // Loading local state is non-networking. Keep development HTTP profiles
     // manageable even when the per-invocation opt-in is not present; URL use
     // is validated again by the REST URL helpers before any request.
@@ -165,7 +169,7 @@ export class ProfileStore {
   }
 
   async get(name: string): Promise<SiteProfile | undefined> {
-    return (await this.readDocument()).profiles[name];
+    return (await this.readDocument()).profiles[name.normalize("NFC")];
   }
 
   async upsert(input: {
@@ -212,7 +216,7 @@ export class ProfileStore {
   }
 
   async remove(name: string): Promise<SiteProfile> {
-    validateProfileName(name);
+    name = validateProfileName(name);
     return this.locks.withLock(name, async () => {
       const profile = await this.get(name);
       if (profile === undefined) {
