@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `auth login` now prints the authorization URL and a waiting notice even when
+  it opens the browser, so the URL can be opened in the browser where you are
+  signed in to WordPress when the system browser is a different one. A login
+  that times out now explains how to retry.
+- Bundled agent guidance now tells agents to read login output while it waits
+  and relay the authorization URL, instead of blocking silently.
+
 ## 1.3.2
 
 ### Fixed

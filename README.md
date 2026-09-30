@@ -80,7 +80,7 @@ Authorize the site:
 novamira auth login https://example.com --name example-site
 ```
 
-Every login authorizes the complete MCP and REST-visible Ability surface. `--no-open` prints the browser authorization URL on stderr without launching a browser. Login allows five minutes for browser authorization by default; use `--timeout <ms>` to override that wait. Login checks public compatibility before opening a listener or browser, uses PKCE S256, verifies the authenticated Ability surface, and only then stores the grant.
+Every login authorizes the complete MCP and REST-visible Ability surface. The browser authorization URL is always printed on stderr, together with a waiting notice, so it can be opened in another browser when the launched one is not signed in to WordPress. `--no-open` prints it without launching a browser. Login allows five minutes for browser authorization by default; use `--timeout <ms>` to override that wait. Login checks public compatibility before opening a listener or browser, uses PKCE S256, verifies the authenticated Ability surface, and only then stores the grant.
 
 ### Remote shells
 

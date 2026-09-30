@@ -46,6 +46,12 @@ and ask only for the browser approval:
 novamira auth login https://example.com --name example-site
 ```
 
+Run login so you can read its stderr while it waits, for example as a
+background command, not as a blocking foreground call: it waits up to five
+minutes for the approval. Relay the printed authorization URL to the user right
+away, and tell them to open it in the browser where they are signed in to
+WordPress if the browser that opened is the wrong one or shows an error.
+
 Every login grants full access. Authorization scope does not replace task-level
 approval. `--yes` confirms a destructive invocation; it does not grant
 permission for an unapproved task.

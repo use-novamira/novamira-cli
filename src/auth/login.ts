@@ -67,6 +67,11 @@ export interface BrowserLauncher {
 
 export interface LoginInteraction {
   showAuthorizationUrl(url: string): void;
+  /**
+   * Called after the browser was launched. The launched browser may not be the
+   * one the operator is signed in with, so the URL is still worth printing.
+   */
+  showBrowserAuthorization?(url: string, timeoutMs: number): void;
   showDeviceInstructions(authorization: DeviceAuthorization): void;
   showRemoteSessionHint(): void;
 }
@@ -299,7 +304,13 @@ export class LoginService {
       });
       if (options.noOpen)
         this.interaction.showAuthorizationUrl(authorizationUrl);
-      if (!options.noOpen) await this.browser.open(authorizationUrl);
+      else {
+        await this.browser.open(authorizationUrl);
+        this.interaction.showBrowserAuthorization?.(
+          authorizationUrl,
+          options.timeoutMs,
+        );
+      }
 
       const result = await callback.wait(pkce.state, options.timeoutMs);
       if (result.error !== undefined) throw callbackError(result.error);
@@ -698,7 +709,17 @@ export class TerminalLoginInteraction implements LoginInteraction {
   ) {}
 
   showAuthorizationUrl(url: string): void {
-    this.writeError(`Authorize this site in your browser:\n${url}\n`);
+    this.writeError(
+      `Authorize this site in your browser:\n${url}\nWaiting for authorization...\n`,
+    );
+  }
+
+  showBrowserAuthorization(url: string, timeoutMs: number): void {
+    this.writeError(
+      "Opened your browser to authorize this site. If it did not open, or opened a browser where you are not signed in to WordPress, open this URL instead:\n" +
+        `${url}\n` +
+        `Waiting for authorization (up to ${duration(timeoutMs)}, press Ctrl+C to cancel)...\n`,
+    );
   }
 
   showDeviceInstructions(authorization: DeviceAuthorization): void {
@@ -719,6 +740,10 @@ export class TerminalLoginInteraction implements LoginInteraction {
 function lifetime(seconds: number): string {
   if (seconds < 120) return `${String(seconds)} seconds`;
   return `${String(Math.floor(seconds / 60))} minutes`;
+}
+
+function duration(ms: number): string {
+  return lifetime(Math.max(1, Math.ceil(ms / 1000)));
 }
 
 async function defaultSleep(ms: number): Promise<void> {

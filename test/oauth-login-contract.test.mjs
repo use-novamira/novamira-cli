@@ -143,6 +143,7 @@ async function harness(harnessOptions = {}) {
   };
   const browserUrls = [];
   const shownUrls = [];
+  const browserPrompts = [];
   let registrations = 0;
   let tokenRequests = 0;
   // Client identifiers the site still resolves. Reinstalling the plugin drops
@@ -355,6 +356,9 @@ async function harness(harnessOptions = {}) {
       shownUrls.push(url);
       callbacks.authorizationUrls.push(url);
     },
+    showBrowserAuthorization: (url, timeoutMs) => {
+      browserPrompts.push({ url, timeoutMs });
+    },
     showDeviceInstructions: (authorization) => {
       deviceInstructions.push(authorization);
     },
@@ -394,6 +398,7 @@ async function harness(harnessOptions = {}) {
     callbacks,
     browserUrls,
     shownUrls,
+    browserPrompts,
     invalidations,
     deviceRequests,
     deviceTokenRequests,
@@ -421,6 +426,20 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
     stderrOutput += value;
   }).showAuthorizationUrl("https://example.test/authorize?state=temporary");
   assert.match(stderrOutput, /authorize\?state=temporary/);
+  assert.match(stderrOutput, /Waiting for authorization/);
+
+  // A launched browser may be the wrong one (not signed in, not the default),
+  // so the URL is still printed along with a sign that the CLI is waiting.
+  stderrOutput = "";
+  new TerminalLoginInteraction((value) => {
+    stderrOutput += value;
+  }).showBrowserAuthorization(
+    "https://example.test/authorize?state=launched",
+    300_000,
+  );
+  assert.match(stderrOutput, /authorize\?state=launched/);
+  assert.match(stderrOutput, /Waiting for authorization \(up to 5 minutes/);
+  assert.match(stderrOutput, /Ctrl\+C/);
 
   let parsed;
   await createProgram(
@@ -481,6 +500,9 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
     assert.equal(login.expiresAt, "2026-07-20T13:00:00.000Z");
     assert.deepEqual(current.counts(), { registrations: 1, tokenRequests: 1 });
     assert.equal(current.browserUrls.length, 1);
+    assert.deepEqual(current.browserPrompts, [
+      { url: current.browserUrls[0], timeoutMs: 1000 },
+    ]);
     const authorization = new URL(current.browserUrls[0]);
     assert.equal(authorization.searchParams.get("scope"), "mcp");
     assert.equal(
@@ -512,6 +534,7 @@ test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, an
     // still holds it, on top of the code exchange.
     assert.deepEqual(current.counts(), { registrations: 1, tokenRequests: 3 });
     assert.equal(current.shownUrls.length, 1);
+    assert.equal(current.browserPrompts.length, 1);
 
     current.failUnknownClient();
     await current.service.login({

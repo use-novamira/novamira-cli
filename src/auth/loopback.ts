@@ -76,7 +76,10 @@ class LoopbackCallbackSession implements CallbackSession {
       const timer = setTimeout(() => {
         cleanup();
         reject(
-          new CliError("auth_denied", "Authorization callback timed out."),
+          new CliError(
+            "auth_denied",
+            "Authorization was not completed in time. Retry auth login, use --no-open to copy the URL into the browser where you are signed in, or --timeout <ms> to wait longer.",
+          ),
         );
       }, timeoutMs);
       const onRequest = (
