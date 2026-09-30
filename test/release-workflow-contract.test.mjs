@@ -63,7 +63,11 @@ async function runUnixInstaller(environment = {}) {
   await mkdir(bin);
 
   const commands = {
-    node: "#!/bin/sh\nexit 0\n",
+    node: `#!/bin/sh
+if [ "$1" = "-p" ]; then
+  printf '%s\\n' '${environment.FAKE_NODE_VERSION ?? "22.20.0"}'
+fi
+`,
     npm: `#!/bin/sh
 if [ "$1 $2" = "prefix --global" ]; then
   printf '%s\\n' '${npmRoot}'
@@ -97,6 +101,36 @@ test("the Unix installer supports an unattended agent selection", async () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.npxLog, /--agent opencode --yes\n$/);
+});
+
+test("the Unix installer pins the skills package that knows current agents", async () => {
+  const result = await runUnixInstaller({ NOVAMIRA_AGENT: "grok" });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.npxLog, /^--yes skills@1\.7\.0 add /);
+});
+
+test("the Unix installer requires the Node.js version the skills package needs", async () => {
+  for (const version of ["21.7.3", "22.19.0"]) {
+    const result = await runUnixInstaller({
+      NOVAMIRA_AGENT: "opencode",
+      FAKE_NODE_VERSION: version,
+    });
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      new RegExp(
+        `Node\\.js 22\\.20 or newer is required \\(found v${version.replaceAll(".", "\\.")}\\)`,
+      ),
+    );
+  }
+  for (const version of ["22.20.0", "23.0.0", "26.10.0"]) {
+    const result = await runUnixInstaller({
+      NOVAMIRA_SKIP_SKILL: "1",
+      FAKE_NODE_VERSION: version,
+    });
+    assert.equal(result.status, 0, result.stderr);
+  }
 });
 
 test("the Unix installer can skip skill installation", async () => {

@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $package = "@novamira/cli"
-$skillsPackage = "skills@1.5.18"
+$skillsPackage = "skills@1.7.0"
 
 function Fail([string] $Message) {
   throw "novamira installer: $Message"
@@ -36,8 +36,14 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
 }
 
 $nodeVersion = & $node --version
-if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v(\d+)' -or [int] $Matches[1] -lt 22) {
-  Fail "Node.js 22 or newer is required (found $nodeVersion)"
+# The CLI runs on Node.js 22+, but the pinned skills package needs 22.20+.
+if (
+  $LASTEXITCODE -ne 0 -or
+  $nodeVersion -notmatch '^v(\d+)\.(\d+)\.' -or
+  [int] $Matches[1] -lt 22 -or
+  ([int] $Matches[1] -eq 22 -and [int] $Matches[2] -lt 20)
+) {
+  Fail "Node.js 22.20 or newer is required (found $nodeVersion)"
 }
 
 Write-Output "Installing $package with npm..."

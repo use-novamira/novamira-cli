@@ -11,7 +11,8 @@ bundled agent guidance.
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 22 or newer (the installers require 22.20 or newer, for the agent
+  skill installation)
 - A compatible WordPress 6.9+ site with Novamira 1.11.1+
 
 CLI 1.x supports REST contract 1 only. Older WordPress or Novamira releases,

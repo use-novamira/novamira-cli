@@ -6,7 +6,7 @@
 set -eu
 
 package=@novamira/cli
-skills_package=skills@1.5.18
+skills_package=skills@1.7.0
 
 fail() {
   printf 'novamira installer: %s\n' "$*" >&2
@@ -18,8 +18,17 @@ for command_name in node npm npx; do
     fail "$command_name is required but was not found in PATH"
 done
 
-node -e 'const major = Number(process.versions.node.split(".")[0]); process.exit(major >= 22 ? 0 : 1)' ||
-  fail "Node.js 22 or newer is required (found $(node --version))"
+# The CLI runs on Node.js 22+, but the pinned skills package needs 22.20+.
+node_version=$(node -p 'process.versions.node')
+node_major=${node_version%%.*}
+node_minor=${node_version#*.}
+node_minor=${node_minor%%.*}
+case "$node_major$node_minor" in
+  '' | *[!0-9]*) fail "could not read the Node.js version (found $node_version)" ;;
+esac
+if [ "$node_major" -lt 22 ] || { [ "$node_major" -eq 22 ] && [ "$node_minor" -lt 20 ]; }; then
+  fail "Node.js 22.20 or newer is required (found v$node_version)"
+fi
 
 printf 'Installing %s with npm...\n' "$package"
 npm install --global --ignore-scripts "$package"

@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.3.3
+
+### Changed
+
+- The installers can now set up the Novamira skill for Grok Build, MiniMax
+  Code, Posit Assistant, Kimchi, fx, and Sarvam Code. They now require Node.js
+  22.20 or newer.
 
 ### Fixed
 

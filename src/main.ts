@@ -32,7 +32,7 @@ import {
   type UpdateCheckEnvironment,
 } from "./update/notifier.js";
 
-export const VERSION = "1.3.2";
+export const VERSION = "1.3.3";
 
 /** Options for distributors invoking the public entry point in a child process. */
 export interface DistributionOptions {
