@@ -35,8 +35,8 @@ test("publication verification outwaits slow registry propagation", async () => 
   assert.ok(budget, "the verification step declares a wait budget");
   assert.ok(interval, "the verification step declares a poll interval");
   assert.ok(
-    Number(budget[1]) >= 180,
-    "a published tarball and its attestation can take minutes to serve",
+    Number(budget[1]) >= 900,
+    "npm has taken more than five minutes to serve a published tarball",
   );
   assert.ok(Number(interval[1]) >= 5);
   assert.ok(Number(interval[1]) < Number(budget[1]));

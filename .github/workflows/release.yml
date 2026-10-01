@@ -49,11 +49,11 @@ jobs:
           NPM_CONFIG_PREFER_ONLINE: "true"
         run: |
           version=${GITHUB_REF_NAME#v}
-          # Propagation regularly outruns a one-minute budget, and a timeout
+          # Propagation has outrun a five-minute budget, and a timeout
           # here fails a publication that already succeeded. Wait minutes, and
           # report the budget the loop actually used.
-          timeout=300
-          interval=10
+          timeout=900
+          interval=15
           await() {
             description=$1
             shift
