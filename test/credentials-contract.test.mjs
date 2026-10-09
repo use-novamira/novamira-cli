@@ -9,8 +9,14 @@ import { join } from "node:path";
 import test from "node:test";
 import { BackendUnavailableError } from "../dist/auth/command-executor.js";
 import { createCredentialStore } from "../dist/auth/credential-store.js";
-import { credentialAccount } from "../dist/auth/credentials.js";
-import { UnixFileSecurity } from "../dist/config/file-security.js";
+import {
+  credentialAccount,
+  FileCredentialBackend,
+} from "../dist/auth/credentials.js";
+import {
+  UnixFileSecurity,
+  WindowsFileSecurity,
+} from "../dist/config/file-security.js";
 import { ProfileLockManager } from "../dist/config/lock.js";
 import { platformPaths } from "../dist/config/paths.js";
 import { redact } from "../dist/output/redact.js";
@@ -28,6 +34,42 @@ const second = {
   accessToken: "access-secret-two",
   refreshToken: "refresh-secret-two",
 };
+
+test("file credentials distinguish missing paths from unsafe ACLs and checker failures", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-absent-"));
+  const path = join(root, "v1", "account.json");
+  let calls = 0;
+  let code = 1;
+  let disappear = false;
+  const security = new WindowsFileSecurity({
+    run: async () => {
+      calls += 1;
+      if (disappear) await rm(path);
+      return code;
+    },
+  });
+  const backend = new FileCredentialBackend(root, security);
+  try {
+    assert.equal(await backend.read("account"), undefined);
+    await mkdir(join(root, "v1"));
+    assert.equal(await backend.read("account"), undefined);
+    assert.equal(calls, 0);
+    await writeFile(path, JSON.stringify(first));
+    await assert.rejects(
+      backend.read("account"),
+      /powershell.exe exited with status 1/,
+    );
+    code = 3;
+    await assert.rejects(backend.read("account"), { code: "auth_required" });
+    code = 0;
+    assert.deepEqual(JSON.parse(await backend.read("account")), first);
+    code = 1;
+    disappear = true;
+    assert.equal(await backend.read("account"), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 async function state() {
   const root = await mkdtemp(join(tmpdir(), "novamira-credentials-"));

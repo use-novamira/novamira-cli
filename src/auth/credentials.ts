@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { createHash } from "node:crypto";
-import { readFile, unlink } from "node:fs/promises";
+import { readFile, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { CliError } from "../errors.js";
 import { atomicWriteFile } from "../config/atomic-write.js";
@@ -194,6 +194,10 @@ export class FileCredentialBackend implements CredentialBackend {
     const directory = join(this.credentialsDir, "v1");
     const path = join(directory, `${account}.json`);
     try {
+      // Detect absence through Node's ENOENT before invoking the Windows ACL
+      // helper, whose exit status cannot distinguish missing paths from errors.
+      // Existing credentials still require both permission checks before reading.
+      await stat(path);
       if (
         !(await this.security.verifyDirectory(directory)) ||
         !(await this.security.verifyFile(path))
@@ -206,6 +210,14 @@ export class FileCredentialBackend implements CredentialBackend {
       return await readFile(path, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      // The file can also disappear while the ACL helper is running. Only a
+      // confirmed ENOENT is absence; denied access and checker failures propagate.
+      try {
+        await stat(path);
+      } catch (presenceError) {
+        if ((presenceError as NodeJS.ErrnoException).code === "ENOENT")
+          return undefined;
+      }
       throw error;
     }
   }

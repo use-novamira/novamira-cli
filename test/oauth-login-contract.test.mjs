@@ -23,7 +23,15 @@ import {
   validateAuthorizationServerMetadata,
 } from "../dist/auth/metadata.js";
 import { validateDeviceAuthorization } from "../dist/auth/device.js";
-import { UnixFileSecurity } from "../dist/config/file-security.js";
+import {
+  UnixFileSecurity,
+  defaultFileSecurity,
+} from "../dist/config/file-security.js";
+import {
+  FileCredentialBackend,
+  LockedCredentialStore,
+} from "../dist/auth/credentials.js";
+import { TokenLifecycle } from "../dist/auth/token-lifecycle.js";
 import { ProfileLockManager } from "../dist/config/lock.js";
 import { platformPaths } from "../dist/config/paths.js";
 import { ProfileStore } from "../dist/config/profiles.js";
@@ -130,10 +138,17 @@ class CallbackHarness {
 async function harness(harnessOptions = {}) {
   const root = await mkdtemp(join(tmpdir(), "novamira-login-"));
   const paths = platformPaths({ NOVAMIRA_HOME: root }, "linux", root);
-  const security = new UnixFileSecurity();
+  const security = harnessOptions.fileCredentials
+    ? defaultFileSecurity()
+    : new UnixFileSecurity();
   const locks = new ProfileLockManager(paths.stateDir, security);
   const profiles = new ProfileStore(paths.configFile, locks, security);
-  const credentials = new MemoryCredentials();
+  const credentials = harnessOptions.fileCredentials
+    ? new LockedCredentialStore(
+        locks,
+        new FileCredentialBackend(paths.credentialsDir, security),
+      )
+    : new MemoryCredentials();
   const callbacks = new CallbackHarness();
   const invalidations = [];
   const cache = {
@@ -393,6 +408,7 @@ async function harness(harnessOptions = {}) {
   );
   return {
     root,
+    locks,
     profiles,
     credentials,
     callbacks,
@@ -419,6 +435,46 @@ async function harness(harnessOptions = {}) {
     },
   };
 }
+
+test("file credential recovery reauthorizes an existing profile after credential deletion", async () => {
+  const current = await harness({ fileCredentials: true });
+  const target = { profileName: "production", origin: "https://example.test" };
+  const login = () =>
+    current.service.login({
+      siteUrl: target.origin,
+      name: target.profileName,
+      noOpen: true,
+      timeoutMs: 300_000,
+    });
+  try {
+    assert.equal(await current.credentials.read(target), undefined);
+    await login();
+    assert.ok(await current.credentials.read(target));
+    await current.credentials.delete(target);
+    const profile = await current.profiles.get(target.profileName);
+    const unexpected = async () => {
+      throw new Error("Absent credentials must not make network requests");
+    };
+    const lifecycle = new TokenLifecycle(
+      profile,
+      current.locks,
+      current.credentials,
+      { invalidateProfile: unexpected },
+      { protectedResource: unexpected, authorizationServer: unexpected },
+      { requestJson: unexpected },
+    );
+    assert.equal((await lifecycle.status()).credentialState, "absent");
+    await assert.rejects(lifecycle.getAccessToken(), { code: "auth_required" });
+    await login();
+    assert.equal((await current.credentials.read(target)).scope, "mcp");
+    assert.equal(
+      (await current.profiles.get(target.profileName)).clientId,
+      profile.clientId,
+    );
+  } finally {
+    await rm(current.root, { recursive: true, force: true });
+  }
+});
 
 test("login performs PKCE DCR, reuses and repairs clients, verifies surfaces, and persists full access", async () => {
   let stderrOutput = "";

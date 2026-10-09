@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Windows profiles using file-based credentials can now log in again after
+  their stored credential is removed, including after a failed token refresh.
+  Missing credentials no longer cause an internal error.
+
 ## 1.3.3
 
 ### Changed
