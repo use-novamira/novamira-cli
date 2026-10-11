@@ -69,7 +69,7 @@ export async function atomicWriteFile(
 // Nothing is renamed until every temporary is written and hardened, so a
 // failure before the rename loop leaves nothing behind at all. Once the loop
 // starts, each rename is individually atomic and lands a file that is already
-// owner-only, and a rename that fails part-way through leaves the destinations
+// hardened, and a rename that fails part-way through leaves the destinations
 // it already replaced in place.
 //
 // Leaving them is deliberate. An earlier revision unlinked them so that a

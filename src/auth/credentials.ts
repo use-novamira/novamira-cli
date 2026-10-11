@@ -251,7 +251,7 @@ export class FileCredentialBackend implements CredentialBackend {
       backend: "file",
       osBackedEncryption: false,
       warning:
-        "Credentials use an owner-only file fallback and are not encrypted by an OS credential service.",
+        "Credentials use a private file fallback and are not encrypted by an OS credential service.",
     };
   }
 }
