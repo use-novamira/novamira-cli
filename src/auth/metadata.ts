@@ -125,7 +125,11 @@ export class MetadataClient {
 
   private async metadataRequest(url: string): Promise<unknown> {
     try {
-      return await this.http.json({ url, redirectPolicy: "discovery" });
+      return await this.http.json({
+        url,
+        redirectPolicy: "discovery",
+        headers: { accept: "application/json" },
+      });
     } catch (cause) {
       if (cause instanceof CliError && cause.code === "network_error")
         throw cause;

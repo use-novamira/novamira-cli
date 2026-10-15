@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Login and connection checks now avoid failures caused by WordPress displaying
+  error notices in the sign-in metadata.
+
 ## 1.3.4
 
 ### Fixed

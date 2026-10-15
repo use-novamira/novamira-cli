@@ -447,6 +447,57 @@ test("metadata validation rejects origin attacks and compatibility matrix failur
   assert.equal(requests, 3);
 });
 
+test("OAuth discovery requests JSON for login and doctor while accepting v1 metadata", async () => {
+  const requests = [];
+  const site = "https://example.test";
+  const metadata = new MetadataClient(
+    new HttpClient({
+      fetch: async (url, init) => {
+        requests.push({
+          url: String(url),
+          headers: new Headers(init?.headers),
+        });
+        if (String(url).endsWith("oauth-authorization-server"))
+          return new Response(null, {
+            status: 302,
+            headers: { location: "/authorization-metadata" },
+          });
+        return new Response(
+          JSON.stringify(
+            String(url).endsWith("/authorization-metadata")
+              ? authorizationMetadata()
+              : protectedFixture,
+          ),
+        );
+      },
+    }),
+  );
+
+  const resource = await metadata.protectedResource(site);
+  assert.deepEqual(resource, protectedFixture);
+  assert.deepEqual(
+    await metadata.authorizationServer(site, resource),
+    authorizationMetadata(),
+  );
+  assert.deepEqual(
+    await metadata.probeProtectedResourceUnvalidated(site),
+    protectedFixture,
+  );
+  assert.deepEqual(
+    requests.map(({ url }) => url),
+    [
+      `${site}/.well-known/oauth-protected-resource`,
+      `${site}/.well-known/oauth-authorization-server`,
+      `${site}/authorization-metadata`,
+      `${site}/.well-known/oauth-protected-resource`,
+    ],
+  );
+  for (const { headers } of requests) {
+    assert.equal(headers.get("accept"), "application/json");
+    assert.equal(headers.get("authorization"), null);
+  }
+});
+
 test("unvalidated metadata probing leaves compatibility checks to the doctor", async () => {
   const incompatibleFixture = {
     ...protectedFixture,
