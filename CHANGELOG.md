@@ -4,8 +4,8 @@
 
 ### Fixed
 
-- Login and connection checks now avoid failures caused by WordPress displaying
-  error notices in the sign-in metadata.
+- Login and site commands now avoid failures caused by WordPress displaying
+  error notices in their responses.
 
 ## 1.3.4
 

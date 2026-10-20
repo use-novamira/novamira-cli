@@ -153,6 +153,10 @@ export class HttpClient {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)
       throw new CliError("usage_error", "Request timeout must be positive.");
 
+    const headers = { ...request.headers };
+    if (!Object.keys(headers).some((name) => name.toLowerCase() === "accept"))
+      headers.accept = "application/json";
+
     const deadline = Date.now() + timeoutMs;
     for (let redirects = 0; ; redirects += 1) {
       const remaining = deadline - Date.now();
@@ -170,9 +174,7 @@ export class HttpClient {
           this.diagnostic(request, current, knownSecrets);
         const init: RequestInit & { duplex?: "half" } = {
           method: request.method ?? "GET",
-          ...(request.headers === undefined
-            ? {}
-            : { headers: request.headers }),
+          headers,
           ...(request.body === undefined ? {} : { body: request.body }),
           redirect: "manual",
           signal: controller.signal,

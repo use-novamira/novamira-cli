@@ -55,6 +55,92 @@ function wordpressError(status, body) {
   return captured;
 }
 
+test("JSON transport requests JSON for OAuth, authenticated REST, and uploads without changing their bodies", async () => {
+  const requests = [];
+  const http = new HttpClient({
+    fetch: async (url, init) => {
+      const headers = new Headers(init?.headers);
+      requests.push({ url: String(url), headers, body: init?.body });
+      return new Response(
+        headers.get("accept") === "application/json"
+          ? '{"ok":true}'
+          : 'PHP Warning: diagnostic output before JSON\n{"ok":true}',
+      );
+    },
+  });
+  const tokenBody = "grant_type=authorization_code&code=test-code";
+  assert.deepEqual(
+    await http.json({
+      url: "https://example.test/token",
+      method: "POST",
+      redirectPolicy: "oauth",
+      responseKind: "oauth",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: tokenBody,
+    }),
+    { ok: true },
+  );
+  assert.deepEqual(
+    await http.authenticatedJson(
+      {
+        url: "https://example.test/abilities",
+        expectedOrigin: "https://example.test",
+      },
+      { getAccessToken: async () => "test-bearer" },
+    ),
+    { ok: true },
+  );
+  const uploadBody = new FormData();
+  uploadBody.set("file", new Blob(["test upload"]), "test.txt");
+  assert.deepEqual(
+    (
+      await http.streamJsonResponse(
+        {
+          url: "https://example.test/upload",
+          method: "POST",
+          redirectPolicy: "upload",
+          body: uploadBody,
+        },
+        [],
+      )
+    ).data,
+    { ok: true },
+  );
+  assert.equal(requests.length, 3);
+  assert.equal(
+    requests[0].headers.get("content-type"),
+    "application/x-www-form-urlencoded",
+  );
+  assert.equal(requests[0].body, tokenBody);
+  assert.equal(requests[1].headers.get("authorization"), "Bearer test-bearer");
+  assert.equal(requests[1].body, undefined);
+  assert.equal(requests[2].headers.get("content-type"), null);
+  assert.equal(requests[2].body, uploadBody);
+});
+
+test("JSON transport preserves an explicit Accept header regardless of casing", async () => {
+  for (const name of ["accept", "Accept", "ACCEPT"]) {
+    const headers = Object.freeze({ [name]: "application/problem+json" });
+    const http = new HttpClient({
+      fetch: async (_url, init) => {
+        assert.equal(
+          new Headers(init?.headers).get("accept"),
+          "application/problem+json",
+        );
+        return new Response("true");
+      },
+    });
+    assert.equal(
+      await http.json({
+        url: "https://example.test/resource",
+        redirectPolicy: "authenticated",
+        headers,
+      }),
+      true,
+    );
+  }
+});
+
 test("HTTP client bounds redirects, time, response bytes, diagnostics, and heterogeneous REST values", async () => {
   let calls = 0;
   const redirected = new HttpClient({
