@@ -128,7 +128,6 @@ export class HttpClient {
       );
     const accessToken = await tokens.getAccessToken();
     const { expectedOrigin: _expectedOrigin, ...safeRequest } = request;
-    void _expectedOrigin;
     return this.perform<T>(
       {
         ...safeRequest,

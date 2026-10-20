@@ -30,6 +30,12 @@ export default tseslint.config(
     rules: {
       "no-console": "error",
       "@typescript-eslint/only-throw-error": "error",
+      // Destructuring a field away to leave the rest is how a request drops
+      // what must not travel further.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { ignoreRestSiblings: true },
+      ],
     },
   },
 );
