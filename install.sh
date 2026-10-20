@@ -6,7 +6,7 @@
 set -eu
 
 package=@novamira/cli
-skills_package=skills@1.7.0
+skills_package=skills@1.7.2
 
 fail() {
   printf 'novamira installer: %s\n' "$*" >&2

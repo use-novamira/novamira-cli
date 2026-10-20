@@ -107,7 +107,7 @@ test("the Unix installer pins the skills package that knows current agents", asy
   const result = await runUnixInstaller({ NOVAMIRA_AGENT: "grok" });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.npxLog, /^--yes skills@1\.7\.0 add /);
+  assert.match(result.npxLog, /^--yes skills@1\.7\.2 add /);
 });
 
 test("the Unix installer requires the Node.js version the skills package needs", async () => {

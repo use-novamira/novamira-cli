@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $package = "@novamira/cli"
-$skillsPackage = "skills@1.7.0"
+$skillsPackage = "skills@1.7.2"
 
 function Fail([string] $Message) {
   throw "novamira installer: $Message"
