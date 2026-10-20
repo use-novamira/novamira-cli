@@ -12,6 +12,8 @@ import {
   assertPluginCompatible,
   assertRestContractCompatible,
   assertWordPressCompatible,
+  FULL_ACCESS_SCOPES,
+  fullAccessScope,
   MINIMUM_NOVAMIRA_VERSION,
   REQUIRED_FEATURES,
   supportsDeviceAuthorization,
@@ -243,8 +245,10 @@ export function onlineDoctorDefinitions(
           return failedCheck(authorizationResult.error);
         if (!status.ok) return failedCheck(status.error);
         if (
-          !resourceResult.value.scopes_supported.includes("mcp") ||
-          !authorizationResult.value.scopes_supported.includes("mcp")
+          fullAccessScope(resourceResult.value.scopes_supported) ===
+            undefined ||
+          fullAccessScope(authorizationResult.value.scopes_supported) ===
+            undefined
         )
           return {
             status: "fail",
@@ -465,7 +469,7 @@ function failureSummary(category: string): string {
 }
 
 function advertisedScopes(scopes: readonly string[]): readonly string[] {
-  return ["mcp"].filter((scope) => scopes.includes(scope));
+  return FULL_ACCESS_SCOPES.filter((scope) => scopes.includes(scope));
 }
 
 function authorizationEvidence(

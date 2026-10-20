@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Tweak
+
+- `auth login` supports Novamira 1.12.10 and newer, which name the
+  full-access OAuth scope `full_access` instead of `mcp`. Existing logins keep
+  refreshing on those sites, and `doctor` no longer reports the scope as
+  unavailable.
+
 ## 1.3.5
 
 ### Fixed

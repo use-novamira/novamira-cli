@@ -130,7 +130,13 @@ test("refresh rotates safely, migrates old scopes, fails closed, and gates 401 r
         return Response.json({ error: "invalid_grant" }, { status: 400 });
       if (mode === "lost") throw new Error("response lost");
       return token(
-        mode === "migrate" ? "mcp" : mode === "invalid-scope" ? "admin" : "mcp",
+        mode === "migrate"
+          ? "mcp"
+          : mode === "invalid-scope"
+            ? "admin"
+            : mode === "canonical"
+              ? "full_access"
+              : "mcp",
       );
     }
     apiRequests += 1;
@@ -164,6 +170,12 @@ test("refresh rotates safely, migrates old scopes, fails closed, and gates 401 r
     mode = "migrate";
     assert.equal(await current.lifecycle.getAccessToken(), "access-2");
     assert.equal(current.credentials.record.scope, "mcp");
+
+    // Novamira 1.12.10 refreshes an `mcp` token under its canonical name.
+    current.credentials.record = credential("access-1", "refresh-1", -1);
+    mode = "canonical";
+    assert.equal(await current.lifecycle.getAccessToken(), "access-2");
+    assert.equal(current.credentials.record.scope, "full_access");
 
     current.credentials.record = credential("access-1", "refresh-1", -1);
     mode = "invalid-scope";

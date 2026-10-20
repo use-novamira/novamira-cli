@@ -410,7 +410,12 @@ function reauthorizationRequired(cause: unknown): CliError {
 }
 
 function scopeTransitionAllowed(previous: string, next: string): boolean {
-  const fullAccessScopes = ["mcp", "abilities", "abilities:read"];
+  const fullAccessScopes = [
+    "full_access",
+    "mcp",
+    "abilities",
+    "abilities:read",
+  ];
   return fullAccessScopes.includes(previous) && fullAccessScopes.includes(next);
 }
 

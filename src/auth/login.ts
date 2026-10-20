@@ -23,6 +23,8 @@ import type { CredentialRecord, CredentialStore } from "./credentials.js";
 import {
   DEVICE_CODE_GRANT,
   deviceAuthorizationEndpoint,
+  fullAccessScope,
+  isFullAccessScope,
   supportsDeviceAuthorization,
   type AuthorizationServerMetadata,
   type MetadataClient,
@@ -143,7 +145,9 @@ export class LoginService {
     )
       this.interaction.showRemoteSessionHint();
 
-    const requestedScope = "mcp";
+    // Metadata validation already guarantees one of the full-access names.
+    const requestedScope =
+      fullAccessScope(authorization.scopes_supported) ?? "mcp";
     // A client registered for the other grant cannot complete this one, and the
     // site says so without redirecting anywhere the CLI is listening — the
     // browser flow would simply wait out its timeout. So the stored id is reused
@@ -211,7 +215,8 @@ export class LoginService {
 
       const token = grant.token;
       const grantedScope = token.scope ?? requestedScope;
-      if (grantedScope !== requestedScope)
+      // Servers issue the canonical name for any full-access synonym.
+      if (grantedScope !== requestedScope && !isFullAccessScope(grantedScope))
         throw new CliError(
           "auth_denied",
           "The authorization server returned a different scope than requested.",

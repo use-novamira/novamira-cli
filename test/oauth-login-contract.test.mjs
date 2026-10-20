@@ -195,7 +195,7 @@ async function harness(harnessOptions = {}) {
         resource: "https://example.test/wp-json/mcp/novamira-oauth",
         authorization_servers: ["https://example.test"],
         bearer_methods_supported: ["header"],
-        scopes_supported: ["mcp"],
+        scopes_supported: harnessOptions.scopesSupported ?? ["mcp"],
         novamira: compatibility,
       });
     if (url.pathname.endsWith("/.well-known/oauth-authorization-server"))
@@ -216,7 +216,7 @@ async function harness(harnessOptions = {}) {
         ],
         code_challenge_methods_supported: ["S256"],
         token_endpoint_auth_methods_supported: ["none"],
-        scopes_supported: ["mcp"],
+        scopes_supported: harnessOptions.scopesSupported ?? ["mcp"],
         ...(deviceSupported
           ? {
               device_authorization_endpoint:
@@ -343,7 +343,9 @@ async function harness(harnessOptions = {}) {
         authorization.searchParams.get("code_challenge"),
       );
       const requested = body.get("code")?.replace("code-", "");
-      const scope = narrowScopeOnce ? "abilities:read" : requested;
+      const scope = narrowScopeOnce
+        ? "abilities:read"
+        : (harnessOptions.issuedScope ?? requested);
       narrowScopeOnce = false;
       return Response.json({
         access_token: `access-${String(tokenRequests)}`,
@@ -1041,6 +1043,67 @@ test("a client registered for one grant is never reused for the other", async ()
   } finally {
     await rm(current.root, { recursive: true, force: true });
   }
+});
+
+test("login accepts the full_access scope name of Novamira 1.12.10", async () => {
+  const target = { profileName: "production", origin: "https://example.test" };
+  const renamed = await harness({ scopesSupported: ["full_access"] });
+  try {
+    await renamed.service.login({
+      siteUrl: "https://example.test",
+      name: "production",
+      noOpen: true,
+      timeoutMs: 1000,
+    });
+    const authorization = new URL(renamed.shownUrls[0]);
+    assert.equal(authorization.searchParams.get("scope"), "full_access");
+    assert.equal((await renamed.credentials.read(target)).scope, "full_access");
+  } finally {
+    await rm(renamed.root, { recursive: true, force: true });
+  }
+
+  // A server that still advertises `mcp` may issue the canonical name.
+  const canonical = await harness({ issuedScope: "full_access" });
+  try {
+    await canonical.service.login({
+      siteUrl: "https://example.test",
+      name: "production",
+      noOpen: true,
+      timeoutMs: 1000,
+    });
+    const authorization = new URL(canonical.shownUrls[0]);
+    assert.equal(authorization.searchParams.get("scope"), "mcp");
+    assert.equal(
+      (await canonical.credentials.read(target)).scope,
+      "full_access",
+    );
+  } finally {
+    await rm(canonical.root, { recursive: true, force: true });
+  }
+
+  const base = {
+    issuer: "https://example.test",
+    authorization_endpoint: "https://example.test/authorize",
+    token_endpoint: "https://example.test/token",
+    registration_endpoint: "https://example.test/register",
+    revocation_endpoint: "https://example.test/revoke",
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    code_challenge_methods_supported: ["S256"],
+    token_endpoint_auth_methods_supported: ["none"],
+  };
+  validateAuthorizationServerMetadata(
+    { ...base, scopes_supported: ["full_access"] },
+    "https://example.test",
+  );
+  assert.throws(
+    () =>
+      validateAuthorizationServerMetadata(
+        { ...base, scopes_supported: ["abilities:read"] },
+        "https://example.test",
+      ),
+    { code: "server_unsupported" },
+  );
 });
 
 test("device metadata and responses are bound to the site origin", () => {

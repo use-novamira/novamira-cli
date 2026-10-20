@@ -17,6 +17,10 @@ import { compareSemver } from "../semver.js";
 export const COMPATIBILITY_CACHE_TTL_MS = 5 * 60 * 1000;
 export const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 export const MINIMUM_NOVAMIRA_VERSION = "1.11.1";
+// Novamira 1.12.10 renamed its full-access grant to `full_access` and only
+// advertises that name; earlier releases advertise and issue `mcp`. Both name
+// the same grant, and newer servers still accept `mcp` as a synonym.
+export const FULL_ACCESS_SCOPES = ["full_access", "mcp"] as const;
 export const REQUIRED_FEATURES = [
   "abilities_bearer_auth",
   "agent_context",
@@ -394,8 +398,17 @@ function endpointString(value: unknown, origin: string, label: string): string {
   return sameOriginEndpoint(value, origin, label).toString();
 }
 
+export function isFullAccessScope(scope: string): boolean {
+  return (FULL_ACCESS_SCOPES as readonly string[]).includes(scope);
+}
+
+/** The advertised full-access scope name, preferring the current one. */
+export function fullAccessScope(scopes: readonly string[]): string | undefined {
+  return FULL_ACCESS_SCOPES.find((scope) => scopes.includes(scope));
+}
+
 function requireScopes(scopes: readonly string[]): void {
-  if (!scopes.includes("mcp"))
+  if (fullAccessScope(scopes) === undefined)
     throw unsupported("The full-access OAuth scope is unavailable.");
 }
 
