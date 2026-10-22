@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `doctor` no longer fails the site skills check on sites in read mode, which
+  hide the Abilities that write, edit and delete skills. In read mode only
+  reading skills is required.
+
 ## 1.3.6
 
 ### Tweak

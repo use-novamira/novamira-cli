@@ -39,6 +39,7 @@ const SKILL_ABILITIES = [
   "novamira/skill-edit",
   "novamira/skill-delete",
 ] as const;
+const READ_MODE_SKILL_ABILITIES = ["novamira/skill-get"] as const;
 
 export interface OnlineDoctorDependencies extends OfflineDoctorDependencies {
   readonly metadata: MetadataClient;
@@ -323,13 +324,22 @@ export function onlineDoctorDefinitions(
     },
     {
       id: "rest.skills",
-      run: () =>
-        checkProbe(
+      run: async () => {
+        // Read mode hides the skill management Abilities, so only reading is required.
+        const contextResult = await context();
+        const readMode =
+          contextResult.ok && readModeActive(contextResult.value);
+        const required: readonly string[] = readMode
+          ? READ_MODE_SKILL_ABILITIES
+          : SKILL_ABILITIES;
+        return checkProbe(
           list(),
-          "All site skill Abilities are REST-visible.",
+          readMode
+            ? "The site skill Abilities allowed in read mode are REST-visible."
+            : "All site skill Abilities are REST-visible.",
           (records) => {
             const names = new Set(records.map(({ name }) => name));
-            const missing = SKILL_ABILITIES.filter((name) => !names.has(name));
+            const missing = required.filter((name) => !names.has(name));
             if (missing.length > 0)
               throw new CliError(
                 "server_unsupported",
@@ -338,9 +348,10 @@ export function onlineDoctorDefinitions(
                   details: { missing },
                 },
               );
-            return { abilities: [...SKILL_ABILITIES] };
+            return { abilities: [...required], readMode };
           },
-        ),
+        );
+      },
     },
     {
       id: "site.permission",
@@ -529,6 +540,15 @@ function tokenStatusCheck(
     evidence: baseEvidence,
     ...(fixed ? { fixed: true } : {}),
   };
+}
+
+function readModeActive(value: AbilityRecord): boolean {
+  const readMode = value.read_mode;
+  return (
+    readMode !== null &&
+    typeof readMode === "object" &&
+    (readMode as { active?: unknown }).active === true
+  );
 }
 
 function contextEvidence(value: AbilityRecord): Record<string, unknown> {

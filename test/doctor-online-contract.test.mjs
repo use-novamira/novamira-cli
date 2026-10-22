@@ -256,6 +256,40 @@ test("online failures preserve unreachable, unauthorized, scope, missing, stale,
     "unsupported",
   );
 
+  const readMode = dependencies({
+    abilities: {
+      listAbilities: async () =>
+        ["novamira/agent-context", "novamira/skill-get"].map((name) => ({
+          name,
+        })),
+      describe: async () => ({ name: "novamira/agent-context" }),
+      agentContext: async () => ({
+        server: compatibility,
+        instructions: "Only inspect the site.",
+        skills: [],
+        environment: { locale: "en_US" },
+        read_mode: { active: true },
+      }),
+    },
+  });
+  const readModeSkills = await checkOf(readMode, "rest.skills");
+  assert.equal(readModeSkills.status, "pass");
+  assert.deepEqual(readModeSkills.evidence, {
+    abilities: ["novamira/skill-get"],
+    readMode: true,
+  });
+
+  const readModeWithoutGet = dependencies({
+    abilities: {
+      ...readMode.createAbilityClient(),
+      listAbilities: async () => [{ name: "novamira/agent-context" }],
+    },
+  });
+  assert.equal(
+    (await checkOf(readModeWithoutGet, "rest.skills")).evidence.category,
+    "unsupported",
+  );
+
   const stale = dependencies({
     abilities: {
       listAbilities: async () => abilityNames.map((name) => ({ name })),
