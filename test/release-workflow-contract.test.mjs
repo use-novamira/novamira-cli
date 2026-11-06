@@ -47,7 +47,10 @@ test("publication verification outwaits slow registry propagation", async () => 
   assert.match(workflow, /within \$timeout seconds/);
 });
 
-async function runUnixInstaller(environment = {}) {
+async function runUnixInstaller(
+  environment = {},
+  { readOnlyGlobal = false } = {},
+) {
   const root = await mkdtemp(join(tmpdir(), "novamira-installer-"));
   const bin = join(root, "mock-bin");
   const npmRoot = join(root, "npm");
@@ -86,12 +89,20 @@ printf '%s\\n' "$*" >>'${log}'
     await chmod(path, 0o755);
   }
 
+  const readOnlyDirectories = [
+    join(npmRoot, "node_modules/@novamira/cli"),
+    join(npmRoot, "bin"),
+  ];
+  if (readOnlyGlobal)
+    for (const directory of readOnlyDirectories) await chmod(directory, 0o555);
+
   const result = spawnSync("/bin/sh", ["install.sh"], {
     cwd: process.cwd(),
     encoding: "utf8",
     env: { ...process.env, PATH: bin, ...environment },
   });
   const npxLog = await readFile(log, "utf8").catch(() => "");
+  for (const directory of readOnlyDirectories) await chmod(directory, 0o755);
   await rm(root, { recursive: true, force: true });
   return { ...result, npxLog };
 }
@@ -132,6 +143,26 @@ test("the Unix installer requires the Node.js version the skills package needs",
     assert.equal(result.status, 0, result.stderr);
   }
 });
+
+test(
+  "the Unix installer explains a global npm folder it cannot write to",
+  { skip: process.getuid?.() === 0 && "root can write to read-only folders" },
+  async () => {
+    const result = await runUnixInstaller(
+      { NOVAMIRA_SKIP_SKILL: "1" },
+      { readOnlyGlobal: true },
+    );
+
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stdout, /Installing @novamira\/cli/);
+    assert.match(
+      result.stderr,
+      /npm cannot write to .*@novamira\/cli as the current user/,
+    );
+    assert.match(result.stderr, /npm config set prefix "\$HOME\/\.npm-global"/);
+    assert.match(result.stderr, /Do not run the installer with sudo/);
+  },
+);
 
 test("the Unix installer can skip skill installation", async () => {
   const result = await runUnixInstaller({ NOVAMIRA_SKIP_SKILL: "1" });

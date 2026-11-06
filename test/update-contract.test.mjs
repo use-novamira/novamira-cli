@@ -397,6 +397,32 @@ test("the installer command matches the detected installation manager", async ()
     ),
     { code: "internal_error" },
   );
+
+  const output = [];
+  await assert.rejects(
+    installVersion(
+      "1.0.0",
+      "1.2.3",
+      {
+        run: (_command, onOutput) => {
+          onOutput("npm error code EACCES\n");
+          return Promise.resolve(243);
+        },
+      },
+      (chunk) => output.push(chunk),
+      "/usr/local/lib/node_modules/x.js",
+    ),
+    (error) => {
+      assert.equal(error.code, "usage_error");
+      assert.match(
+        error.message,
+        /npm config set prefix "\$HOME\/\.npm-global"/,
+      );
+      assert.match(error.message, /Do not run the update with sudo/);
+      return true;
+    },
+  );
+  assert.deepEqual(output, ["npm error code EACCES\n"]);
 });
 
 test("the installer targets the queried registry and the Windows npm shim", () => {

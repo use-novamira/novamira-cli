@@ -129,7 +129,19 @@ export async function installVersion(
     registry,
   );
   const printable = [command.command, ...command.args].join(" ");
-  const code = await runner.run(command, onOutput);
+  const seen = { permissionDenied: false };
+  const code = await runner.run(command, (chunk) => {
+    if (chunk.includes("EACCES")) seen.permissionDenied = true;
+    onOutput(chunk);
+  });
+  if (code !== 0 && seen.permissionDenied && command.command !== "bun")
+    throw new CliError(
+      "usage_error",
+      "npm cannot write to its global folder as the current user (EACCES). " +
+        'Point npm at a folder in your home directory with `npm config set prefix "$HOME/.npm-global"`, ' +
+        "add $HOME/.npm-global/bin to the front of PATH in your shell profile, open a new terminal, " +
+        "and run `novamira update` again. Do not run the update with sudo.",
+    );
   if (code !== 0)
     throw new CliError(
       "internal_error",

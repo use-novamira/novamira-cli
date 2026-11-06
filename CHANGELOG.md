@@ -7,6 +7,9 @@
 - `doctor` no longer fails the site skills check on sites in read mode, which
   hide the Abilities that write, edit and delete skills. In read mode only
   reading skills is required.
+- The macOS and Linux installer and `novamira update` explain how to fix an
+  npm global folder that the current user cannot write to, instead of ending
+  with npm's permission error and its suggestion to retry as root.
 
 ## 1.3.6
 

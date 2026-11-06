@@ -30,10 +30,38 @@ if [ "$node_major" -lt 22 ] || { [ "$node_major" -eq 22 ] && [ "$node_minor" -lt
   fail "Node.js 22.20 or newer is required (found v$node_version)"
 fi
 
+# npm reports a root-owned global folder as a long EACCES stack trace and then
+# suggests rerunning as root. Detect it first and explain the user-level fix.
+parent_directory() {
+  parent=${1%/*}
+  printf '%s\n' "${parent:-/}"
+}
+
+nearest_existing() {
+  candidate=$1
+  while [ ! -e "$candidate" ] && [ "$candidate" != / ]; do
+    candidate=$(parent_directory "$candidate")
+  done
+  printf '%s\n' "$candidate"
+}
+
+npm_prefix=$(npm prefix --global)
+for target in "$(npm root --global)/@novamira/cli" "$npm_prefix/bin/novamira"; do
+  existing=$(nearest_existing "$target")
+  [ -d "$existing" ] || existing=$(parent_directory "$existing")
+  if [ ! -w "$existing" ]; then
+    fail "npm cannot write to $existing as the current user.
+Point npm at a folder in your home directory, then run this installer again:
+  npm config set prefix \"\$HOME/.npm-global\"
+  echo 'export PATH=\"\$HOME/.npm-global/bin:\$PATH\"' >> ~/.zshrc
+  source ~/.zshrc
+If your shell is bash, use ~/.bashrc instead of ~/.zshrc. Do not run the installer with sudo."
+  fi
+done
+
 printf 'Installing %s with npm...\n' "$package"
 npm install --global --ignore-scripts "$package"
 
-npm_prefix=$(npm prefix --global)
 novamira_bin=$npm_prefix/bin/novamira
 [ -x "$novamira_bin" ] ||
   fail "npm installed Novamira, but novamira is not available in PATH (npm prefix: $npm_prefix)"
