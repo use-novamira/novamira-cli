@@ -1,9 +1,22 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
+
+### Tweak
+
+- The core guide explains AI approvals on Novamira v2 sites: the review that
+  goes inside the input of a call that changes the site, the code of the
+  site's approval rules, the code that groups the calls of one request in the
+  AI change history, what to do while a call waits for a person, and to
+  describe calls to people in plain words.
 
 ### Fixed
 
+- `upload` shows the site's message, with the link where a person decides,
+  when creating the upload link waits for an approval on Novamira v2, instead
+  of "Temporary upload endpoint is missing or invalid".
+- `run` no longer reports a local input schema mismatch for the Novamira v2
+  review sent inside the input.
 - `doctor` no longer fails the site skills check on sites in read mode, which
   hide the Abilities that write, edit and delete skills. In read mode only
   reading skills is required.
