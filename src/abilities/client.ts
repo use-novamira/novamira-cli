@@ -174,7 +174,10 @@ export class AbilityClient {
       );
 
     const warnings: AbilityWarning[] = [];
-    const inputFindings = diagnoseSchema(input, record.input_schema);
+    const inputFindings = diagnoseSchema(
+      withoutReview(input),
+      record.input_schema,
+    );
     if (inputFindings.length > 0)
       warnings.push({
         code: "local_input_schema_mismatch",
@@ -383,4 +386,14 @@ function unsupported(message: string, cause?: unknown): CliError {
   return new CliError("server_unsupported", message, {
     ...(cause === undefined ? {} : { cause }),
   });
+}
+
+/**
+ * Novamira v2 reads the approval review from inside the input and takes it out before the Ability sees it, so it is
+ * not part of the Ability's schema and is left out of the local diagnostics.
+ */
+function withoutReview(input: unknown): unknown {
+  if (!isObject(input) || !("novamira_review" in input)) return input;
+  const { novamira_review: _review, ...rest } = input;
+  return rest;
 }

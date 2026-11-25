@@ -168,6 +168,20 @@ test("run resolves cached or live REST-visible metadata and applies confirmation
   }
 });
 
+test("the Novamira v2 review inside the input is sent as it is and raises no local schema warning", async () => {
+  const review = { attention: 1, summary: "Sets the count.", rules: "abc" };
+  const current = harness({ cached: ability() });
+  const result = await current.client.run("vendor/group/action", {
+    count: 1,
+    novamira_review: review,
+  });
+  assert.deepEqual(result.warnings, []);
+  assert.equal(
+    current.requests.find(({ kind }) => kind === "run").request.body,
+    JSON.stringify({ input: { count: 1, novamira_review: review } }),
+  );
+});
+
 test("schema findings stay advisory, server errors stay authoritative, and raw results remain budgetable", async () => {
   const mismatch = harness({ cached: ability(), result: { unexpected: true } });
   const result = await mismatch.client.run("vendor/group/action", {

@@ -179,6 +179,59 @@ test("composite upload streams only the temporary credential", async () => {
   }
 });
 
+test("upload shows the site's message when the upload link waits for a person", async () => {
+  const root = await mkdtemp(join(tmpdir(), "novamira-upload-waiting-"));
+  const local = join(root, "payload.bin");
+  await writeFile(local, "12345");
+  let fetches = 0;
+  const http = new HttpClient({
+    fetch: async () => {
+      fetches += 1;
+      throw new Error("must not upload");
+    },
+  });
+  const message =
+    "Waiting for a person to approve this call. Nothing has executed.";
+  const uploader = new CompositeUploader(
+    profile,
+    {
+      run: async () => ({
+        data: {
+          novamira_confirmation: {
+            executed: false,
+            code: "novamira_confirmation_pending",
+            message,
+            request_id: "abc123",
+            state: "pending_confirmation",
+            dashboard_url:
+              "https://example.test/wordpress/wp-admin/admin.php?page=novamira-ai-activity&request=abc123",
+          },
+        },
+        warnings: [],
+      }),
+    },
+    http,
+    1_000,
+    () => now,
+  );
+  try {
+    await assert.rejects(uploader.upload(local, "wp-content/uploads/a.bin"), {
+      code: "confirmation_required",
+      message,
+      remoteCode: "novamira_confirmation_pending",
+      details: {
+        request_id: "abc123",
+        state: "pending_confirmation",
+        dashboard_url:
+          "https://example.test/wordpress/wp-admin/admin.php?page=novamira-ai-activity&request=abc123",
+      },
+    });
+    assert.equal(fetches, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("upload rejects unsafe limits and grants and never retries an ambiguous stream", async () => {
   const root = await mkdtemp(join(tmpdir(), "novamira-upload-policy-"));
   const local = join(root, "payload.bin");

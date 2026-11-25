@@ -54,6 +54,8 @@ export class CompositeUploader {
       { path: remotePath },
       { fresh: true },
     );
+    const waiting = approvalWaiting(created.data);
+    if (waiting !== undefined) throw waiting;
     const grant = this.validateGrant(created.data);
     const file = await openLocalFile(localPath);
     try {
@@ -228,6 +230,29 @@ function validateUploadResponse(value: unknown): number {
   )
     throw new CliError("rest_error", "The upload response is invalid.");
   return value.bytes_written;
+}
+
+/**
+ * Novamira v2 answers a call that waits for a person, or that it sends back, with a novamira_confirmation object
+ * instead of the grant. Its message says why and where a person decides, so it is shown as it is.
+ */
+function approvalWaiting(value: unknown): CliError | undefined {
+  if (!isObject(value) || !isObject(value.novamira_confirmation))
+    return undefined;
+  const confirmation = value.novamira_confirmation;
+  const message =
+    typeof confirmation.message === "string" && confirmation.message !== ""
+      ? confirmation.message
+      : "The site did not create the upload link: it is waiting for a person to approve. Nothing has executed.";
+  const details: Record<string, unknown> = {};
+  for (const key of ["request_id", "state", "dashboard_url"] as const)
+    if (typeof confirmation[key] === "string") details[key] = confirmation[key];
+  return new CliError("confirmation_required", message, {
+    ...(typeof confirmation.code === "string"
+      ? { remoteCode: confirmation.code }
+      : {}),
+    details,
+  });
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
